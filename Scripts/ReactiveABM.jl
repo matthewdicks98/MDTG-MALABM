@@ -44,7 +44,9 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     println("Fun Trades: " * join([length(fun_traders_vec[i].actionTimes) for i in 1:parameters.Nᴸᵥ], " "))
 
     # plot the mid price 
-    p1 = plot(mid_prices, label = "mid-price", title = "Prices")
+    p1 = plot(mid_prices, label = "mid-price", title = "Prices and Traders Info", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Price")
 
     # add best bid and best ask
     scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
@@ -59,23 +61,44 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     end
 
     # New plot of the spread over time 
-    p2 = plot(spreads, label = "spread", title = "Spread")
+    p2 = plot(spreads, label = "spread", title = "Spread", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Spread")
 
     # plot the order imbalance
-    p3 = plot(imbalances, label = "imbalance", title = "Imbalance")
+    p3 = plot(imbalances, label = "imbalance", title = "Imbalance", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Order Imbalance")
 
     # only prices plot
-    p4 = plot(mid_prices, label = "mid-price")
+    p4 = plot(mid_prices, label = "mid-price", title = "Prices", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Price")
 
     # add best bid and best ask
     scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
     scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
 
     # plot the bids ask Volumes
-    p5 = plot(ask_volumes, label = "asks", title = "Volumes", color="red")
+    p5 = plot(ask_volumes, label = "asks", title = "Volumes", color="red", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Cumulative Volume")
     plot!(bid_volumes, label = "bids", color="green")
 
     p6 = plot(p1, p4, p3, p5, layout = 4, legend = false)
+
+    p7 = plot(mid_prices, label = "mid-price", title = "Prices and Moving Averages", legend = :outertopright)
+    xlabel!("Trade Num")
+    ylabel!("Price")
+
+    # add best bid and best ask
+    scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
+    scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
+
+    # add ma of the chartist
+    for i in 1:Nᴸₜ
+        plot!(chartist_ma[i], label = "MA"*string(i) * "(" * string(round(char_traders_vec[i].λ, digits = 4)) * ")")
+    end
 
     # save plots to vis them 
     Plots.savefig(p1, path_to_files * "TestImages/prices_with_fun_char.pdf")
@@ -84,6 +107,7 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     Plots.savefig(p4, path_to_files * "TestImages/prices.pdf")
     Plots.savefig(p5, path_to_files * "TestImages/volumes.pdf")
     Plots.savefig(p6, path_to_files * "TestImages/all.pdf")
+    Plots.savefig(p7, path_to_files * "TestImages/prices_MAs.pdf")
 end
 
 #---------------------------------------------------------------------------------------------------
@@ -101,10 +125,11 @@ struct Parameters
     σₜ::Float64 # Std dev in Normal for log-normal for starting point of chartist mid-price
     λmin::Float64 # min of the uniform dist for the forgetting factor of the chartist
     λmax::Float64 # max of the uniform dist for the forgetting factor of the chartist
+    γ::Millisecond # the Time In Force (time the order stays in the order book until manually cancelled by the agent)
     T::Millisecond # Simulation time
     seed::Int64
-	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 8, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, σₜ = 0.01, λmin = 0.0005, λmax = 0.3, T = Millisecond(3600 * 1000), seed = 1)
-		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, σₜ, λmin, λmax, T, seed)
+	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 8, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, σₜ = 0.01, λmin = 0.0005, λmax = 0.3, γ = Millisecond(300), T = Millisecond(3600 * 1000), seed = 1)
+		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, σₜ, λmin, λmax, γ, T, seed)
 	end
 end 
 mutable struct LimitOrder
@@ -147,21 +172,42 @@ end
 mutable struct HighFrequency <: Actor{LOBState}
     traderId::Int64 # uniquely identifies an agent
     traderMnemonic::String # used to record who sent the orders
-    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
+    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a trade
+    currentOrders::Array{Tuple{DateTime, Order}, 1} # the HF agents current orders in the order book (used for cancellations) (DateTime is the time the order was sent)
 end
 #---------------------------------------------------------------------------------------------------
 
 #----- Agent rules -----# 
 function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, parameters::Parameters)
-    # TODO: What if the spread is 0?
+    # TODO: Cancellations
 
     # if (event_counter > max_events + number_initial_messages)
     #     return
     # end
 
+    # do not trade if trading time is finished
     if !(initializing)
         if !(Dates.now() - start_time < parameters.T)
             return
+        end
+    end
+
+    # cancel orders that have not been matched (dont have to account for the order being in the book or not since an empty message is sent back from CTX)
+    if !(initializing) && length(highfrquency.currentOrders) > 0 # dont cancell orders during initialization and make sure there are orders to cancel
+        # check if oldest order needs to be cancelled
+        if Dates.now() - highfrquency.currentOrders[1][1] > parameters.γ
+
+            # find all orders that need to be cancelled
+            cancel_inds = findall(x -> Dates.now() - x[1] > parameters.γ, highfrquency.currentOrders)
+
+            # send cancellation orders through
+            for ind in cancel_inds
+                CancelOrder(gateway, highfrquency.currentOrders[ind][2])
+            end
+            
+            # delete the orders from the currentOrders array
+            deleteat!(highfrquency.currentOrders, cancel_inds)
+
         end
     end
 
@@ -200,19 +246,23 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, pa
     # only record event times if they are after the initializing of the LOB
     if !(initializing)
         SubmitOrder(gateway, order)
-        push!(highfrquency.actionTimes, Dates.now() - start_time)
+        current_time = Dates.now()
+        push!(highfrquency.actionTimes, current_time - start_time)
+        push!(highfrquency.currentOrders, (current_time, order))
         global event_counter += 1
     else
         # if initializing do not allow agents to submit an order in the spread
         if (order.price > LOB.aₜ) || (order.price < LOB.bₜ)
             SubmitOrder(gateway, order)
+            #current_time = Dates.now()
+            #push!(highfrquency.currentOrders, (current_time, order))
             global event_counter += 1
         end
     end
     
 end
 function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameters)
-    # TODO: (1) Look at agent MA rules
+    # TODO: 
 
     # if (event_counter > max_events + number_initial_messages)
     #     return
@@ -385,7 +435,7 @@ function UpdateLOBState!(LOB::LOBState, message)
     side = Symbol(fields[2]); trader = Symbol(fields[3])
 
     # if the msg is of the form time|x,y,z| then there is no price or quantity executed so the order must be disgarded
-    # Can happen if for example a MO is traded with no limit orders to eat it up
+    # Can happen if for example a MO is traded with no limit orders to eat it up, or cancelling an order that is not in the book anymore
     executions = msg[2:end]
     if executions == [""]
        return
@@ -572,7 +622,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     status = @async Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
 
     # initialize the traders
-    hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}()), 1:parameters.Nᴴ)
+    hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
     char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
     fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σₜ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
 
@@ -605,15 +655,13 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     global initializing = true
     global number_initial_messages = 751 
-    global initializing = InitializeLOB(LOB, parameters, messages_chnl, source)
+    global initializing = InitializeLOB(LOB, parameters, messages_chnl, source) # takes about 3.2 seconds
 
     # println("Spread: "*string(LOB.sₜ))
     # println("Imbalance: "*string(LOB.ρₜ))
     # println("Best Ask: "*string(LOB.aₜ))
     # println("Best Bid: "*string(LOB.bₜ))
     # println("Mid-price: "*string(LOB.mₜ))
-
-    println("\n#################################################################### Initialization Done\n")
 
     # push start state info to the running totals
     push!(mid_prices, LOB.mₜ)
@@ -636,6 +684,8 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
     end
 
+    println("\n#################################################################### Initialization Done\n")
+
     #----- Event Loop -----#
 
     # currently only 1 message from the channel can be processed in a
@@ -648,7 +698,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     @time while true
         
         # Sleep the main task for a tiny amount of time to switch to the listening task
-        sleep(0.000001) # 1 microsecond
+        sleep(0.005) # 1 microsecond
 
         # send the event to be processed by the actors
         if isready(messages_chnl) # if there are messages in the channel then take the last update
