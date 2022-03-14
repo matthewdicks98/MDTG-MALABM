@@ -15,18 +15,18 @@ StartLOB(gateway)
 # set the parameters
 Nᴸₜ = 5
 Nᴸᵥ = 5
-Nᴴ = 60
+Nᴴ = 30
 δ = 0.01
 κ = 2
 ν = 3.3
 m₀ = 10000
 σᵥ = 0.01
-σₜ = 0.01
+σₜ = 0.0001
 λmin = 0.0005
 λmax = 0.03
-γ = Millisecond(1000)
-T = Millisecond(3600) # an hour is 3600 * 1000
-seed = 1
+γ = Millisecond(1500)
+T = Millisecond(8000) # an hour is 3600 * 1000
+seed = 42
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, σₜ = σₜ, λmin = λmin, λmax = λmax, γ = γ, T = T, seed = seed)
 

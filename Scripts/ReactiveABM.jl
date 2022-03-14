@@ -198,7 +198,15 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, pa
         if Dates.now() - highfrquency.currentOrders[1][1] > parameters.γ
 
             # find all orders that need to be cancelled
-            cancel_inds = findall(x -> Dates.now() - x[1] > parameters.γ, highfrquency.currentOrders)
+            timed_out_inds = findall(x -> Dates.now() - x[1] > parameters.γ, highfrquency.currentOrders)
+
+            # get all the orders that are in the LOB
+            cancel_inds = Vector{Int64}()
+            for ind in timed_out_inds
+                if (highfrquency.currentOrders[ind][2].orderId in keys(LOB.bids)) || (highfrquency.currentOrders[ind][2].orderId in keys(LOB.asks))
+                    push!(cancel_inds, ind)
+                end
+            end
 
             # send cancellation orders through
             for ind in cancel_inds
@@ -623,8 +631,8 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
-    char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
-    fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σₜ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
+    char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σₜ))), Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
+    fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
 
     # initialize the Subject and subscribe actors to it
     source = Subject(LOBState)
@@ -698,7 +706,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     @time while true
         
         # Sleep the main task for a tiny amount of time to switch to the listening task
-        sleep(0.005) # 1 microsecond
+        sleep(0.05) # 1 microsecond
 
         # send the event to be processed by the actors
         if isready(messages_chnl) # if there are messages in the channel then take the last update
