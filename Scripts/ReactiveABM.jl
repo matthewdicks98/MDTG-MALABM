@@ -493,14 +493,14 @@ function UpdateLOBState!(LOB::LOBState, message)
             side == :Buy ? delete!(LOB.bids, -id) : delete!(LOB.asks, -id)
         elseif type == :Trade
             if side == :Buy
-				LOB.priceReference = LOB.aₜ
+				LOB.priceReference = LOB.aₜ # price reference is the execution price of the previous trade (approx)
                 LOB.asks[id].volume -= volume
                 if LOB.asks[id].volume == 0
                     delete!(LOB.asks, id)
                 end
                 
             else
-				LOB.priceReference = LOB.bₜ
+				LOB.priceReference = LOB.bₜ # price reference is the execution price of the previous trade (approx)
                 LOB.bids[id].volume -= volume
                 if LOB.bids[id].volume == 0
                     delete!(LOB.bids, id)
@@ -588,7 +588,7 @@ function InitializeLOB(LOB::LOBState, parameters::Parameters, messages_chnl::Cha
             # if there is only 1 message in the array then there is 1 message in the channel so break the initialization
             # also clear the array so that we only keep the messages received from after the initialization
             if length(messages_received) == 1
-                popfirst!(messages_received)
+                message = popfirst!(messages_received)
                 push!(initial_messages_received, message)
                 break
             end
@@ -662,7 +662,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     println("\n#################################################################### Initialization Started\n")
 
     global initializing = true
-    global number_initial_messages = 751 
+    global number_initial_messages = 1001
     global initializing = InitializeLOB(LOB, parameters, messages_chnl, source) # takes about 3.2 seconds
 
     # println("Spread: "*string(LOB.sₜ))
@@ -775,14 +775,33 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         # open file and write
         open(path_to_files * "/Data/Raw.csv", "w") do file
 
+            # set the Header
+            println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,ClientOrderId,Price,Volume")
+
             # add initial messages
-            for message in initial_messages_received[1:(end - 1)]
-                println(file, "INITIAL" * "," *join(split(message, "|"), ",")) 
+            for message in initial_messages_received
+                message_arr = split(message, "|")
+                if length(message_arr) > 3 # trade that walked the LOB
+                    message_info = join(message_arr[1:2], ",")
+                    for trade in message_arr[3:end]
+                        println(file, "INITIAL" * "," * message_info * "," * trade)
+                    end
+                else
+                    println(file, "INITIAL" * "," *join(split(message, "|"), ",")) 
+                end 
             end
 
             # add sim messages
             for message in messages_received
-                println(file, "SIMULATION" * "," *join(split(message, "|"), ",")) 
+                message_arr = split(message, "|")
+                if length(message_arr) > 3 # trade that walked the LOB
+                    message_info = join(message_arr[1:2], ",")
+                    for trade in message_arr[3:end]
+                        println(file, "SIMULATION" * "," * message_info * "," * trade)
+                    end
+                else
+                    println(file, "SIMULATION" * "," *join(split(message, "|"), ",")) 
+                end
             end
 
         end

@@ -26,5 +26,8 @@ Manifest.toml
 # Test Images
 TestImages/
 
+# Images
+Images/
+
 # Data files
-Data/*.csv
+Data/
