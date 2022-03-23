@@ -134,7 +134,7 @@ function ProcessMarketOrder!(file::IOStream, order::DataFrameRow, nextOrder::Sym
             best.Volume -= order.Volume
         end
     end
-    if nextOrder != :Trade
+    if order.Trader != nextOrder
         midPrice = MidPrice(best, contraBest); microPrice = MicroPrice(best, contraBest); spread = Spread(best, contraBest)
         !isempty(best.IDs) ? println(file, string(order.Initialization) * "," * string(order.DateTime, ",", best.Price, ",", best.Volume, ",Limit,", side, ",", midPrice, ",", microPrice, ",", spread)) : println(file, string(order.Initialization) * "," * string(order.DateTime, ",missing,missing,Limit,", side, ",missing,missing,missing"))
     end
@@ -161,7 +161,7 @@ function ProcessCancelOrder!(file::IOStream, order::DataFrameRow, best::Best, co
             indeces = [k for (k,v) in lob if v.Price == bestPrice] # Find the order ids of the best
             best.Price = bestPrice; best.Volume = sum(lob[i].Volume for i in indeces); best.IDs = indeces # Update the best
             midPrice = MidPrice(best, contraBest); microPrice = MicroPrice(best, contraBest); spread = Spread(best, contraBest)
-            println(file, string(order.DateTime, ",", best.Price, ",", best.Volume, ",Cancelled,", side, ",", midPrice, ",", microPrice, ",", spread))
+            println(file, string(order.Initialization) * "," * string(order.DateTime, ",", best.Price, ",", best.Volume, ",Cancelled,", side, ",", midPrice, ",", microPrice, ",", spread))
         else # The buy side LOB was emptied - update best
             best.Price = 0; best.Volume = 0; best.IDs = Vector{Int64}()
             println(file, string(order.Initialization) * "," * string(order.DateTime, ",missing,missing,Cancelled,", side, ",missing,missing,missing"))
@@ -179,6 +179,7 @@ Output:
     - Output L1LOB file written to csv
 =#
 function CleanData(raw::String; initialization::Bool = false, times::Vector{Millisecond} = Vector{Millisecond}())
+    println("Reading in data...")
     orders = CSV.File(string("../Data/Raw.csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
     replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
     orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1
@@ -192,6 +193,7 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     open("../Data/L1LOB.csv", "w") do file
         println(file, "Initialization,DateTime,Price,Volume,Type,Side,MidPrice,MicroPrice,Spread") # Header
         for i in 1:nrow(orders) # Iterate through all orders
+            print("Iterations: " * string(i) * "/" * string(nrow(orders)) * "\r")
             order = orders[i, :]
             #-- Limit Orders --#
             if order.Type == :Limit
@@ -218,23 +220,40 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                     ## Deal with LOs that crossed the spread
                     # LO that crossed the spread, if id not in bids and it is the last trade for the agent, the last field is the new LO
                     if orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(bids))
+
+                        # Combined sell trade is printed after the last split trade with VWAP price
+                        indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):(i-1)
+                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,-1,missing,missing,missing"))
+
+                        # print the updated bests bid due to the trade
+                        best = bestBid
+                        contraBest = bestAsk
+                        midPrice = MidPrice(best, contraBest); microPrice = MicroPrice(best, contraBest); spread = Spread(best, contraBest)
+                        !isempty(best.IDs) ? println(file, string(order.Initialization) * "," * string(order.DateTime, ",", best.Price, ",", best.Volume, ",Limit,", 1, ",", midPrice, ",", microPrice, ",", spread)) : println(file, string(order.Initialization) * "," * string(order.DateTime, ",missing,missing,Limit,", 1, ",missing,missing,missing"))
+
+                        # process the LO due to the excess
                         order.Type = :Limit
                         ProcessLimitOrder!(file, order, bestAsk, bestBid, asks, -1) # Add the order to the lob and update the best if necessary
+
                     # LO that crossed the spread, if id not in bids and it is the first trade for the agent, the last field is the new LO with reduced volume
                     elseif orders[i, :Trader] != orders[i - 1, :Trader] && !(order.OrderId in keys(bids))
                         order.Type = :Limit
-                        indices = i:(findnext(x -> x != order[i, :Trader], i) - 1)
-                        order.Volume -= sum(orders[indices, :Volume])
+                        indeces = (i+1):(findnext(x -> x != orders[i, :Trader], orders.Trader, i) - 1)
+                        order.Volume -= sum(orders[indeces, :Volume])
                         if order.volume > 0
                             ProcessLimitOrder!(file, order, bestAsk, bestBid, asks, -1) # Add the order to the lob and update the best if necessary
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
-                    elseif orders[i + 1, :Type] != :Trade
-                        indeces = (findprev(x -> x == :Limit, orders.Type, i) + 1):i
-                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,-1,missing,missing,missing")) # Combined sell trade is printed after the last split trade with VWAP price
-                        ProcessMarketOrder!(file, order, orders[i + 1, :Type], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
+                    elseif orders[i, :Trader] != orders[i + 1, :Trader]
+                        # find trades just made by a given agent
+                        indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):i
+                        agent_trades = orders[indeces,:]
+                        # get only the ones that are market orders
+                        indeces = findall(x -> x == :Trade, agent_trades.Type)
+                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(agent_trades[indeces, :Price] .* agent_trades[indeces, :Volume]) / sum(agent_trades[indeces, :Volume])), ",", sum(agent_trades[indeces, :Volume]), ",Market,-1,missing,missing,missing")) # Combined sell trade is printed after the last split trade with VWAP price
+                        ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
                     else
-                        ProcessMarketOrder!(file, order, orders[i + 1, :Type], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
+                        ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
                     end
                     
                 else # Trade was seller-initiated (Buy MO)
@@ -242,23 +261,40 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                     ## Deal with LOs that crossed the spread
                     # LO that crossed the spread, if id not in asks and it is the last trade for the agent, the last field is the new LO
                     if orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(asks))
+
+                        # Combined sell trade is printed after the last split trade with VWAP price
+                        indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):(i-1)
+                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,1,missing,missing,missing"))
+                        
+                        # print the updated bests bid due to the trade
+                        best = bestAsk
+                        contraBest = bestBid
+                        midPrice = MidPrice(best, contraBest); microPrice = MicroPrice(best, contraBest); spread = Spread(best, contraBest)
+                        !isempty(best.IDs) ? println(file, string(order.Initialization) * "," * string(order.DateTime, ",", best.Price, ",", best.Volume, ",Limit,", -1, ",", midPrice, ",", microPrice, ",", spread)) : println(file, string(order.Initialization) * "," * string(order.DateTime, ",missing,missing,Limit,", -1, ",missing,missing,missing"))
+
+                        # process the excess LO
                         order.Type = :Limit
-                        ProcessLimitOrder!(file, order, bestAsk, bestBid, bids, 1) # Add the order to the lob and update the best if necessary
+                        ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
+  
                     # LO that crossed the spread, if id not in asks and it is the first trade for the agent, the last field is the new LO with reduced volume
                     elseif orders[i, :Trader] != orders[i - 1, :Trader] && !(order.OrderId in keys(asks))
                         order.Type = :Limit
-                        indices = i:(findnext(x -> x != order[i, :Trader], i) - 1)
-                        order.Volume -= sum(orders[indices, :Volume])
+                        indeces = (i+1):(findnext(x -> x != orders[i, :Trader], orders.Trader, i) - 1)
+                        order.Volume -= sum(orders[indeces, :Volume])
                         if order.volume > 0
-                            ProcessLimitOrder!(file, order, bestAsk, bestBid, bids, 1) # Add the order to the lob and update the best if necessary
+                            ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
-                    elseif orders[i + 1, :Type] != :Trade
-                        indeces = (findprev(x -> x == :Limit, orders.Type, i) + 1):i
-                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,1,missing,missing,missing")) # Combined buy trade is printed after the last split trade with VWAP price
-                        ProcessMarketOrder!(file, order, orders[i + 1, :Type], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
+                    elseif orders[i, :Trader] != orders[i + 1, :Trader]
+                        # find trades just made by a given agent
+                        indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):i
+                        agent_trades = orders[indeces,:]
+                        # get only the ones that are market orders
+                        indeces = findall(x -> x == :Trade, agent_trades.Type)
+                        println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(agent_trades[indeces, :Price] .* agent_trades[indeces, :Volume]) / sum(agent_trades[indeces, :Volume])), ",", sum(agent_trades[indeces, :Volume]), ",Market,1,missing,missing,missing")) # Combined buy trade is printed after the last split trade with VWAP price
+                        ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
                     else
-                        ProcessMarketOrder!(file, order, orders[i + 1, :Type], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
+                        ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
                     end
                 end
 
@@ -275,6 +311,8 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
             end
             orders[i, :Imbalance] = OrderImbalance(bids, asks) # Calculate the volume imbalance after every iteration
             bidDepthProfile[i, :] = DepthProfile(bids, 1); askDepthProfile[i, :] = DepthProfile(asks, -1)
+            # clear iteration prints
+            flush(stdout)
         end
     end
     println("Data cleaning complete")
@@ -328,8 +366,12 @@ function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime
     # VIAgents = plot(VISells.RelativeTime, VISells.Price, seriestype = :scatter, marker = (:red, stroke(:red), :dtriangle, 0.7), label = "Sell (MO)", ylabel = "Price (ticks)", legend = :topleft, legendfontsize = 5, xrotation = 30, fg_legend = :transparent)
     # plot!(VIAgents, VIBuys.RelativeTime, VIBuys.Price, seriestype = :scatter, marker = (:blue, stroke(:blue), :utriangle, 0.7), label = "Buy (MO)")
     # savefig(VIAgents, "../Images/VIAgents." * format)
+    println("Simuation visualization complete")
 end
 #---------------------------------------------------------------------------------------------------
 
-# depthProfile = CleanData("Raw", initialization = false)
+depthProfile = CleanData("Raw", initialization = false)
 VisualiseSimulation("TAQ", "L1LOB")
+
+#include("../Scripts/StylisedFacts.jl")
+#DepthProfile(depthProfile)

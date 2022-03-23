@@ -781,6 +781,10 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
             # add initial messages
             for message in initial_messages_received
                 message_arr = split(message, "|")
+                # dont write empty messages
+                if message_arr[3] == ""
+                    continue
+                end
                 if length(message_arr) > 3 # trade that walked the LOB
                     message_info = join(message_arr[1:2], ",")
                     for trade in message_arr[3:end]
@@ -794,6 +798,10 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
             # add sim messages
             for message in messages_received
                 message_arr = split(message, "|")
+                # dont write empty messages
+                if message_arr[3] == ""
+                    continue
+                end
                 if length(message_arr) > 3 # trade that walked the LOB
                     message_info = join(message_arr[1:2], ",")
                     for trade in message_arr[3:end]
