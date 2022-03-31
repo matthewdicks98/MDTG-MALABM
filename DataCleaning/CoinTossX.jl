@@ -1,7 +1,7 @@
 #=
 DataCleaning:
 - Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, Matthew Dicks
 - Function: Clean CoinTossX simulated data into L1LOB data for stylized fact analysis as well as visualisation of HFT time-series
 - Structure:
     1. Supplementary functions
@@ -11,7 +11,7 @@ DataCleaning:
     depthProfile = CleanData("Raw")
     VisualiseSimulation("TAQ", "L1LOB"; startTime = DateTime("2021-07-16T12:37:00.672"), endTime = DateTime("2021-07-16T12:37:42.260"))
 =#
-using CSV, DataFrames, Dates, Plots
+using CSV, DataFrames, Dates, Plots, Plots.PlotMeasures, Tables
 #---------------------------------------------------------------------------------------------------
 
 #----- Supplementary functions -----#
@@ -86,7 +86,7 @@ function ProcessLimitOrder!(file::IOStream, order::DataFrameRow, best::Best, con
     else # Otherwise find the best
         if (side * order.Price) > (side * best.Price) # Change best if price of current order better than the best (side == 1 => order.Price > best.Price) (side == -1 => order.Price < best.Price)
             best.Price = order.Price; best.Volume = order.Volume; best.IDs = [order.OrderId] # New best is created
-            if !isempty(contraBest.IDs) && (side * order.Price) >= (side * contraBest.Price) # Crossing order
+            if !isempty(contraBest.IDs) && (side * order.Price) > (side * contraBest.Price) # Crossing order
                 error("Negative spread at order " * string(order.OrderId))
             else # Only print the LO if it is not a CLO
                 midPrice = MidPrice(best, contraBest); microPrice = MicroPrice(best, contraBest); spread = Spread(best, contraBest)
@@ -180,7 +180,7 @@ Output:
 =#
 function CleanData(raw::String; initialization::Bool = false, times::Vector{Millisecond} = Vector{Millisecond}())
     println("Reading in data...")
-    orders = CSV.File(string("../Data/Raw.csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
+    orders = CSV.File(string("../Data/CoinTossX/Raw.csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
     replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
     orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1
     DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])
@@ -190,7 +190,9 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     bids = Dict{Int64, Order}(); asks = Dict{Int64, Order}() # Both sides of the entire LOB are tracked with keys corresponding to orderIds
     bestBid = Best(0, 0, Vector{Int64}()); bestAsk = Best(0, 0, Vector{Int64}()) # Current best bid/ask is stored in a tuple (Price, vector of Volumes, vector of OrderIds) and tracked
     bidDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7); askDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7)
-    open("../Data/L1LOB.csv", "w") do file
+    LO_ask_delay = Vector{DataFrameRow}()
+    LO_bid_delay = Vector{DataFrameRow}()
+    open("../Data/CoinTossX/L1LOB.csv", "w") do file
         println(file, "Initialization,DateTime,Price,Volume,Type,Side,MidPrice,MicroPrice,Spread") # Header
         for i in 1:nrow(orders) # Iterate through all orders
             print("Iterations: " * string(i) * "/" * string(nrow(orders)) * "\r")
@@ -236,12 +238,13 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                         ProcessLimitOrder!(file, order, bestAsk, bestBid, asks, -1) # Add the order to the lob and update the best if necessary
 
                     # LO that crossed the spread, if id not in bids and it is the first trade for the agent, the last field is the new LO with reduced volume
-                    elseif orders[i, :Trader] != orders[i - 1, :Trader] && !(order.OrderId in keys(bids))
+                    elseif !(order.OrderId in keys(bids))
                         order.Type = :Limit
                         indeces = (i+1):(findnext(x -> x != orders[i, :Trader], orders.Trader, i) - 1)
                         order.Volume -= sum(orders[indeces, :Volume])
-                        if order.volume > 0
-                            ProcessLimitOrder!(file, order, bestAsk, bestBid, asks, -1) # Add the order to the lob and update the best if necessary
+                        if order.Volume > 0
+                            #ProcessLimitOrder!(file, order, bestAsk, bestBid, asks, -1) # Add the order to the lob and update the best if necessary
+                            push!(LO_ask_delay, order)
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
                     elseif orders[i, :Trader] != orders[i + 1, :Trader]
@@ -252,6 +255,10 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                         indeces = findall(x -> x == :Trade, agent_trades.Type)
                         println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(agent_trades[indeces, :Price] .* agent_trades[indeces, :Volume]) / sum(agent_trades[indeces, :Volume])), ",", sum(agent_trades[indeces, :Volume]), ",Market,-1,missing,missing,missing")) # Combined sell trade is printed after the last split trade with VWAP price
                         ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
+                        if !isempty(LO_ask_delay)
+                            order_delay = popfirst!(LO_ask_delay) # it will only ever have 1 order in it
+                            ProcessLimitOrder!(file, order_delay, bestAsk, bestBid, asks, -1)
+                        end
                     else
                         ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestBid, bestAsk, bids, 1) # Sell trade affects bid side. Always aggress MO against contra side and update LOB and best
                     end
@@ -277,12 +284,13 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                         ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
   
                     # LO that crossed the spread, if id not in asks and it is the first trade for the agent, the last field is the new LO with reduced volume
-                    elseif orders[i, :Trader] != orders[i - 1, :Trader] && !(order.OrderId in keys(asks))
+                    elseif !(order.OrderId in keys(asks)) # can just check if id is not in because the only other option has been checked above
                         order.Type = :Limit
                         indeces = (i+1):(findnext(x -> x != orders[i, :Trader], orders.Trader, i) - 1)
                         order.Volume -= sum(orders[indeces, :Volume])
-                        if order.volume > 0
-                            ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
+                        if order.Volume > 0
+                            #ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
+                            push!(LO_bid_delay, order)
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
                     elseif orders[i, :Trader] != orders[i + 1, :Trader]
@@ -293,6 +301,10 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                         indeces = findall(x -> x == :Trade, agent_trades.Type)
                         println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(agent_trades[indeces, :Price] .* agent_trades[indeces, :Volume]) / sum(agent_trades[indeces, :Volume])), ",", sum(agent_trades[indeces, :Volume]), ",Market,1,missing,missing,missing")) # Combined buy trade is printed after the last split trade with VWAP price
                         ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
+                        if !isempty(LO_bid_delay)
+                            order_delay = popfirst!(LO_bid_delay)
+                            ProcessLimitOrder!(file, order_delay, bestBid, bestAsk, bids, 1)
+                        end
                     else
                         ProcessMarketOrder!(file, order, orders[i + 1, :Trader], bestAsk, bestBid, asks, -1) # buy trade affects ask side. Always aggress MO against contra side and update LOB and best
                     end
@@ -315,17 +327,17 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
             flush(stdout)
         end
     end
-    println("Data cleaning complete")
-    CSV.write("../Data/TAQ.csv", orders)
-    return hcat(bidDepthProfile, askDepthProfile)
+    println("\nData cleaning complete")
+    CSV.write("../Data/CoinTossX/TAQ.csv", orders)
+    CSV.write("../Data/CoinTossX/DepthProfileData.csv",  Tables.table(hcat(bidDepthProfile, askDepthProfile)), writeheader=false)
 end
 #---------------------------------------------------------------------------------------------------
 
 #----- Plot simulation results -----#
 function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime = missing, startTime = missing)
     # Cleaning
-    orders = CSV.File(string("../Data/", taq, ".csv"), missingstring = "missing", types = Dict(:Trader => Symbol, :Initialization => Symbol, :Side => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> y.Type != :Trade, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)
-    l1lob = CSV.File(string("../Data/", l1lob, ".csv"), missingstring = "missing", types = Dict(:Initialization => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> x.Type != :Market, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)# Filter out trades from L1LOB since their mid-prices are missing
+    orders = CSV.File(string("../Data/CoinTossX/", taq, ".csv"), missingstring = "missing", types = Dict(:Trader => Symbol, :Initialization => Symbol, :Side => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> y.Type != :Trade, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)
+    l1lob = CSV.File(string("../Data/CoinTossX/", l1lob, ".csv"), missingstring = "missing", types = Dict(:Initialization => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> x.Type != :Market, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)# Filter out trades from L1LOB since their mid-prices are missing
     if !ismissing(startTime)
         filter!(x -> x.DateTime >= startTime, l1lob); filter!(x -> x.DateTime >= startTime, orders)
     end
@@ -348,7 +360,11 @@ function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime
     plot!(bubblePlot, l1lob.RelativeTime, l1lob.MicroPrice, seriestype = :line, linecolor = :green, label = "Micro-price")
     plot!(bubblePlot, l1lob.RelativeTime, l1lob.MidPrice, seriestype = :steppost, linecolor = :black, label = "Mid-price", linewidth = 2)
     # Spread and imbalance features
-    volumeImbalance = plot(orders.RelativeTime, orders.Imbalance, seriestype = :line, linecolor = :purple, xlabel = "Time (s)", ylabel = "Order Imbalance", label = "OrderImbalance", legend = :topleft, legendfontsize = 5, tickfontsize = 5, xrotation = 30, fg_legend = :transparent)
+    imbalance = filter(x -> x != "",orders.Imbalance)
+    if typeof(imbalance[1]) == String31 || typeof(imbalance[1]) == String # imbalance can constain strings
+        imbalance = parse.(Float64, imbalance)
+    end
+    volumeImbalance = plot(orders.RelativeTime, imbalance, seriestype = :line, linecolor = :purple, xlabel = "Time (s)", ylabel = "Order Imbalance", label = "OrderImbalance", legend = :topleft, legendfontsize = 5, tickfontsize = 5, xrotation = 30, fg_legend = :transparent, right_margin = 8mm)
     plot!(twinx(), l1lob.RelativeTime, l1lob.Spread, seriestype = :steppost, linecolor = :orange, ylabel = "Spread", label = "Spread", legend = :topright, legendfontsize = 5, tickfontsize = 5, xaxis = false, xticks = false, fg_legend = :transparent)
     # Log-return plot
     filter!(x -> !ismissing(x.MidPrice), l1lob)
@@ -356,7 +372,7 @@ function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime
     returns = plot(l1lob.RelativeTime[2:end], logreturns, seriestype = :line, linecolor = :black, legend = false, tickfontsize = 5, ylabel = "Log-returns", xticks = false)
     l = @layout([a; b{0.2h}; c{0.2h}])
     simulation = plot(bubblePlot, returns, volumeImbalance, layout = l, link = :x, guidefontsize = 7)
-    savefig(simulation, "../Images/Simulation." * format)
+    savefig(simulation, "../Images/CoinTossX/Simulation." * format)
     # Agents
     # TFSells = filter(x -> string(x.Trader)[1:2] == "TF", orders); TFBuys = filter(x -> string(x.Trader)[1:2] == "TF", orders)
     # TFAgents = plot(TFSells.RelativeTime, TFSells.Price, seriestype = :scatter, marker = (:red, stroke(:red), :dtriangle, 0.7), label = "Sell (MO)", ylabel = "Price (ticks)", legend = :topleft, legendfontsize = 5, xrotation = 30, fg_legend = :transparent)
@@ -370,8 +386,5 @@ function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime
 end
 #---------------------------------------------------------------------------------------------------
 
-depthProfile = CleanData("Raw", initialization = false)
+CleanData("Raw", initialization = false)
 VisualiseSimulation("TAQ", "L1LOB")
-
-#include("../Scripts/StylisedFacts.jl")
-#DepthProfile(depthProfile)

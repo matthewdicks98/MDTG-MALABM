@@ -1,4 +1,5 @@
 using JavaCall, Rocket, Sockets, Random, Dates, Distributions, Plots, CSV, DataFrames
+import Rocket.scheduled_next!
 
 ENV["JULIA_COPY_STACKS"]=1
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
@@ -42,6 +43,8 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     println("HF Orders: " * string(sum(length(hf_traders_vec[i].actionTimes) for i in 1:parameters.Nᴴ)))
     println("Chartist Trades: " * join([length(char_traders_vec[i].actionTimes) for i in 1:parameters.Nᴸₜ], " "))
     println("Fun Trades: " * join([length(fun_traders_vec[i].actionTimes) for i in 1:parameters.Nᴸᵥ], " "))
+
+    println("Fun Prices: " * join([string(fun_traders_vec[i].fₜ) for i in 1:parameters.Nᴸᵥ], " "))
 
     # plot the mid price 
     p1 = plot(mid_prices, label = "mid-price", title = "Prices and Traders Info", legend = :outertopright)
@@ -122,14 +125,13 @@ struct Parameters
     ν::Float64 # Scaling factor for power law order size
     m₀::Float64 # Initial mid-price
     σᵥ::Float64 # Std dev in Normal for log-normal for fundamental value
-    σₜ::Float64 # Std dev in Normal for log-normal for starting point of chartist mid-price
     λmin::Float64 # min of the uniform dist for the forgetting factor of the chartist
     λmax::Float64 # max of the uniform dist for the forgetting factor of the chartist
     γ::Millisecond # the Time In Force (time the order stays in the order book until manually cancelled by the agent)
     T::Millisecond # Simulation time
     seed::Int64
-	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 8, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, σₜ = 0.01, λmin = 0.0005, λmax = 0.3, γ = Millisecond(300), T = Millisecond(3600 * 1000), seed = 1)
-		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, σₜ, λmin, λmax, γ, T, seed)
+	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 8, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, λmin = 0.0005, λmax = 0.3, γ = Millisecond(300), T = Millisecond(3600 * 1000), seed = 1)
+		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T, seed)
 	end
 end 
 mutable struct LimitOrder
@@ -180,10 +182,6 @@ end
 #----- Agent rules -----# 
 function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, parameters::Parameters)
     # TODO: Cancellations
-
-    # if (event_counter > max_events + number_initial_messages)
-    #     return
-    # end
 
     # do not trade if trading time is finished
     if !(initializing)
@@ -271,10 +269,6 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, pa
 end
 function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameters)
     # TODO: 
-
-    # if (event_counter > max_events + number_initial_messages)
-    #     return
-    # end
 
     # if the order book is being initialized do nothing
     if initializing 
@@ -409,6 +403,32 @@ function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, par
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Define How Subject Passes Messages to Actors -----#
+
+function nextState(subject::Subject, LOB::LOBState, parameters::Parameters)
+    not_activated = Vector{Any}()
+    count_listeners = 1
+    for listener in subject.listeners
+        if count_listeners <= parameters.Nᴴ
+            scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
+        else
+            if rand(Uniform(0,1)) > 0.5
+                scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
+            else
+                push!(not_activated, listener)
+            end  
+        end 
+        count_listeners += 1
+    end
+    while length(not_activated) > 0
+        listener = rand(not_activated)
+        scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
+        filter!(x -> x != listener, not_activated)
+    end
+end
+
+#---------------------------------------------------------------------------------------------------
+
 #----- Define Actor Actions -----#
 
 # HF
@@ -425,6 +445,12 @@ Rocket.on_complete!(actor::Chartist)        = println("ID: " * actor.traderId * 
 Rocket.on_next!(actor::Fundamentalist, LOB::LOBState) = FundamentalistAction(actor, LOB, parameters)
 Rocket.on_error!(actor::Fundamentalist, err)      = error(err)
 Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
+
+#---------------------------------------------------------------------------------------------------
+
+#----- Define Subject -----#
+
+Rocket.on_next!(subject::Subject, LOB::LOBState) = nextState(subject, LOB, parameters)
 
 #---------------------------------------------------------------------------------------------------
 
@@ -527,24 +553,6 @@ function UpdateLOBState!(LOB::LOBState, message)
 		end
 	end
 
-    # if LOB.aₜ <= LOB.bₜ
-    #     println()
-    #     for id in keys(LOB.asks) 
-    #         if LOB.asks[id].price == LOB.aₜ
-    #             print(string(id) * " => ")
-    #             println(LOB.asks[id])
-    #             break
-    #         end
-    #     end
-    #     for id in keys(LOB.bids) 
-    #         if LOB.bids[id].price == LOB.bₜ
-    #             print(string(id) * " => ")
-    #             println(LOB.bids[id])
-    #             break
-    #         end
-    #     end
-    #     println()
-    # end
 	LOB.sₜ = abs(LOB.aₜ - LOB.bₜ)
 	LOB.mₜ = (LOB.aₜ + LOB.bₜ) / 2
     LOB.ρₜ = (totalBuyVolume == 0) && (totalSellVolume == 0) ? 0.0 : (totalBuyVolume - totalSellVolume) / (totalBuyVolume + totalSellVolume)
@@ -631,7 +639,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
-    char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σₜ))), Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
+    char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀, Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
     fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
 
     # initialize the Subject and subscribe actors to it
@@ -640,23 +648,27 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     map(i -> subscribe!(source, i), char_traders_vec)
     map(i -> subscribe!(source, i), fun_traders_vec)
 
-    # define some storage for test images
+    # storage for the prices
     mid_prices = Array{Float64, 1}()
     micro_prices = Array{Float64, 1}()
-    best_bids = Array{Float64, 1}()
-    best_asks = Array{Float64, 1}()
-    chartist_ma = Vector{Vector{Float64}}()
-    fundamentalist_f = Vector{Vector{Float64}}()
-    for i in 1:Nᴸₜ
-        push!(chartist_ma, []) 
+
+    # define some storage for test images
+    if print_and_plot
+        best_bids = Array{Float64, 1}()
+        best_asks = Array{Float64, 1}()
+        chartist_ma = Vector{Vector{Float64}}()
+        fundamentalist_f = Vector{Vector{Float64}}()
+        for i in 1:Nᴸₜ
+            push!(chartist_ma, []) 
+        end
+        for i in 1:Nᴸᵥ
+            push!(fundamentalist_f, [])
+        end
+        spreads = Array{Float64, 1}()
+        imbalances = Array{Float64, 1}()
+        ask_volumes = Array{Float64, 1}()
+        bid_volumes = Array{Float64, 1}()
     end
-    for i in 1:Nᴸᵥ
-        push!(fundamentalist_f, [])
-    end
-    spreads = Array{Float64, 1}()
-    imbalances = Array{Float64, 1}()
-    ask_volumes = Array{Float64, 1}()
-    bid_volumes = Array{Float64, 1}()
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
     println("\n#################################################################### Initialization Started\n")
@@ -665,31 +677,29 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     global number_initial_messages = 1001
     global initializing = InitializeLOB(LOB, parameters, messages_chnl, source) # takes about 3.2 seconds
 
-    # println("Spread: "*string(LOB.sₜ))
-    # println("Imbalance: "*string(LOB.ρₜ))
-    # println("Best Ask: "*string(LOB.aₜ))
-    # println("Best Bid: "*string(LOB.bₜ))
-    # println("Mid-price: "*string(LOB.mₜ))
-
-    # push start state info to the running totals
+    # push start state info to the prices
     push!(mid_prices, LOB.mₜ)
     push!(micro_prices, LOB.microPrice)
-    push!(best_bids, LOB.bₜ)
-    push!(best_asks, LOB.aₜ)
-    for i in 1:Nᴸₜ
-        push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
-    end
-    for i in 1:Nᴸᵥ
-        push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
-    end
-    push!(spreads, LOB.sₜ)
-    push!(imbalances, LOB.ρₜ)
-    if length(LOB.asks) > 0
-        push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
-    end
-    
-    if length(LOB.bids) > 0
-        push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+
+    # push start state info to the running totals
+    if print_and_plot
+        push!(best_bids, LOB.bₜ)
+        push!(best_asks, LOB.aₜ)
+        for i in 1:Nᴸₜ
+            push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
+        end
+        for i in 1:Nᴸᵥ
+            push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
+        end
+        push!(spreads, LOB.sₜ)
+        push!(imbalances, LOB.ρₜ)
+        if length(LOB.asks) > 0
+            push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
+        end
+        
+        if length(LOB.bids) > 0
+            push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+        end
     end
 
     println("\n#################################################################### Initialization Done\n")
@@ -719,36 +729,31 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
                 # update the LOBState with new order 
                 UpdateLOBState!(LOB, message)
 
-                # Update running state info
+                # Update running prices
                 push!(mid_prices, LOB.mₜ)
                 push!(micro_prices, LOB.microPrice)
-                push!(best_bids, LOB.bₜ)
-                push!(best_asks, LOB.aₜ)
-                for i in 1:Nᴸₜ
-                    push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
-                end
-                for i in 1:Nᴸᵥ
-                    push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
-                end
-                push!(spreads, LOB.sₜ)
-                push!(imbalances, LOB.ρₜ)
-                if length(LOB.asks) > 0
-                    push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
-                end
-                if length(LOB.bids) > 0
-                    push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+
+                # Update running state info
+                if print_and_plot
+                    push!(best_bids, LOB.bₜ)
+                    push!(best_asks, LOB.aₜ)
+                    for i in 1:Nᴸₜ
+                        push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
+                    end
+                    for i in 1:Nᴸᵥ
+                        push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
+                    end
+                    push!(spreads, LOB.sₜ)
+                    push!(imbalances, LOB.ρₜ)
+                    if length(LOB.asks) > 0
+                        push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
+                    end
+                    if length(LOB.bids) > 0
+                        push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+                    end
                 end
 
             end
-
-            # print running totals
-            # if !(event_counter > max_events + number_initial_messages)
-            #     println("Spread: "*string(LOB.sₜ))
-            #     println("Imbalance: "*string(LOB.ρₜ))
-            #     println("Best Ask: "*string(LOB.aₜ))
-            #     println("Best Bid: "*string(LOB.bₜ))
-            #     println("Mid-price: "*string(LOB.mₜ))
-            # end
 
             # check if the actors want to act based on the updated state
             next!(source, LOB)
@@ -773,7 +778,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     if write
 
         # open file and write
-        open(path_to_files * "/Data/Raw.csv", "w") do file
+        open(path_to_files * "/Data/CoinTossX/Raw.csv", "w") do file
 
             # set the Header
             println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,ClientOrderId,Price,Volume")

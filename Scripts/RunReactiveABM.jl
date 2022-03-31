@@ -13,22 +13,21 @@ gateway = Login(1,1)
 StartLOB(gateway)
 
 # set the parameters
-Nᴸₜ = 5
-Nᴸᵥ = 5
+Nᴸₜ = 6
+Nᴸᵥ = 4
 Nᴴ = 30
 δ = 0.01
-κ = 10
+κ = 5
 ν = 3.3
 m₀ = 10000
 σᵥ = 0.01
-σₜ = 0.000
 λmin = 0.0005
-λmax = 0.03
-γ = Millisecond(800)
-T = Millisecond(50000) # an hour is 3600 * 1000
-seed = 2
+λmax = 0.05
+γ = Millisecond(1000)
+T = Millisecond(30000) # an hour is 3600 * 1000
+seed = 100 # 125 has price decrease
 
-parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, σₜ = σₜ, λmin = λmin, λmax = λmax, γ = γ, T = T, seed = seed)
+parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T, seed = seed)
 
 # set the parameters that dictate output
 print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
