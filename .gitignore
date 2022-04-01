@@ -27,7 +27,9 @@ Manifest.toml
 TestImages/
 
 # Images
-Images/
+Images/CoinTossX/
+Images/JSE/
 
 # Data files
-Data/
+Data/CoinTossX/
+Data/JSE/

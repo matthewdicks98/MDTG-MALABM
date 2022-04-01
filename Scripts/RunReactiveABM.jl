@@ -23,8 +23,8 @@ m₀ = 10000
 σᵥ = 0.01
 λmin = 0.0005
 λmax = 0.05
-γ = Millisecond(1000)
-T = Millisecond(30000) # an hour is 3600 * 1000
+γ = Millisecond(100)
+T = Millisecond(25000) # an hour is 3600 * 1000
 seed = 100 # 125 has price decrease
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T, seed = seed)

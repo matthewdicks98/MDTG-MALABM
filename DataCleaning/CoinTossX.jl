@@ -11,8 +11,12 @@ DataCleaning:
     depthProfile = CleanData("Raw")
     VisualiseSimulation("TAQ", "L1LOB"; startTime = DateTime("2021-07-16T12:37:00.672"), endTime = DateTime("2021-07-16T12:37:42.260"))
 =#
-using CSV, DataFrames, Dates, Plots, Plots.PlotMeasures, Tables
+using CSV, DataFrames, Dates, Plots, Plots.PlotMeasures, Tables, ProgressMeter
 #---------------------------------------------------------------------------------------------------
+
+# set working directory (the path to the DataCleaning/CoinTossX.jl file)
+path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/DataCleaning"
+cd(path_to_folder)
 
 #----- Supplementary functions -----#
 mutable struct Order
@@ -194,8 +198,7 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     LO_bid_delay = Vector{DataFrameRow}()
     open("../Data/CoinTossX/L1LOB.csv", "w") do file
         println(file, "Initialization,DateTime,Price,Volume,Type,Side,MidPrice,MicroPrice,Spread") # Header
-        for i in 1:nrow(orders) # Iterate through all orders
-            print("Iterations: " * string(i) * "/" * string(nrow(orders)) * "\r")
+        @showprogress "Cleaning Data..." for i in 1:nrow(orders) # Iterate through all orders
             order = orders[i, :]
             #-- Limit Orders --#
             if order.Type == :Limit
@@ -323,11 +326,8 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
             end
             orders[i, :Imbalance] = OrderImbalance(bids, asks) # Calculate the volume imbalance after every iteration
             bidDepthProfile[i, :] = DepthProfile(bids, 1); askDepthProfile[i, :] = DepthProfile(asks, -1)
-            # clear iteration prints
-            flush(stdout)
         end
     end
-    println("\nData cleaning complete")
     CSV.write("../Data/CoinTossX/TAQ.csv", orders)
     CSV.write("../Data/CoinTossX/DepthProfileData.csv",  Tables.table(hcat(bidDepthProfile, askDepthProfile)), writeheader=false)
 end

@@ -21,13 +21,19 @@ using Distributions, CSV, Plots, StatsPlots, Dates, StatsBase, DataFrames, Plots
 import Statistics.var
 #---------------------------------------------------------------------------------------------------
 
+# set working directory (the path to the Scripts/StylisedFacts.jl file)
+path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/Scripts"
+cd(path_to_folder)
+
 #----- Generate stylized facts -----#
-function StylizedFacts(exchange::String; format::String = "pdf")
+function StylizedFacts(exchange::String, startTime::DateTime, endTime::DateTime; format::String = "pdf")
     println("Computing stylized facts")
     println("Reading in data...")
-    data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
-    if exchange == "JSE"
-        filter!(y -> y.DateTime < DateTime("2019-01-04T09:00:41"), data)
+    if exchange == "CoinTossX"
+        data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+    else
+        data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+        filter!(x -> startTime <= x.DateTime && x.DateTime < endTime, data)
     end
     data.Date = Date.(data.DateTime)
     uniqueDays = unique(data.Date)
@@ -86,7 +92,7 @@ end
 #----- Log-return and absolute log-return autocorrelation -----#
 function LogReturnAutocorrelation(exchange::String, logreturns::Vector{Float64}, lag::Int64; format::String = "pdf")
     color = exchange == "CoinTossX" ? :green : (exchange == "JSE" ? :purple : :orange)
-    # lag = length(logreturns) - 1
+    lag = length(logreturns) - 1
     autoCorr = autocor(logreturns, 1:lag; demean = false)
     absAutoCorr = autocor(abs.(logreturns), 1:lag; demean = false)
     autoCorrPlot = plot(autoCorr, seriestype = [:sticks, :scatter], marker = (color, stroke(color), 3), linecolor = :black, xlabel = "Lag", ylabel = "Autocorrelation", legend = false, ylim = (-0.4, 0.2))
@@ -100,7 +106,7 @@ end
 function TradeSignAutocorrelation(exchange::String, data::DataFrame, lag::Int64; format::String = "pdf")
     color = exchange == "CoinTossX" ? :green : (exchange == "JSE" ? :purple : :orange)
     tradeSigns = data[findall(x -> x == :Market, data.Type), :Side]
-    # lag = length(tradeSigns) - 1
+    lag = length(tradeSigns) - 1
     autoCorr = autocor(tradeSigns, 1:lag; demean = false)
     autoCorrPlot = plot(autoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = false, xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8))
     plot!(autoCorrPlot, [quantile(Normal(), (1 + 0.95) / 2) / sqrt(length(tradeSigns)), quantile(Normal(), (1 - 0.95) / 2) / sqrt(length(tradeSigns))], seriestype = :hline, line = (:dash, :black, 2))
@@ -154,10 +160,15 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Extract price-impact data -----#
-function PriceImpact(exchange::String; format::String = "pdf")
+function PriceImpact(exchange::String, startTime::DateTime, endTime::DateTime; format::String = "pdf")
     println("Computing price impact")
     println("Reading in data...")
-    data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MicroPrice, :Price, :Spread], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+    if exchange == "CoinTossX"
+        data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MicroPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+    else
+        data = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), drop = [:MicroPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+        filter!(x -> startTime <= x.DateTime && x.DateTime < endTime, data)
+    end
     buyerInitiated = DataFrame(Impact = Vector{Float64}(), NormalizedVolume = Vector{Float64}()); sellerInitiated = DataFrame(Impact = Vector{Float64}(), NormalizedVolume = Vector{Float64}())
     days = unique(x -> Date(x), data.DateTime)
     tradeIndeces = findall(x -> x == :Market, data.Type)
@@ -166,6 +177,9 @@ function PriceImpact(exchange::String; format::String = "pdf")
         dayTradeIndeces = tradeIndeces[searchsorted(data[tradeIndeces, :DateTime], day, by = Date)]
         dayVolume = sum(data[dayTradeIndeces, :Volume])
         for index in dayTradeIndeces
+            if index == 1 # can't compute mid price change if it is the first thing that happened
+                continue
+            end
             midPriceBeforeTrade = data[index - 1, :MidPrice]; midPriceAfterTrade = data[index + 1, :MidPrice]
             Δp = log(midPriceAfterTrade) - log(midPriceBeforeTrade)
             ω = (data[index, :Volume] / dayVolume) * (totalTradeCount / length(days))
@@ -193,6 +207,11 @@ function PriceImpact(exchange::String; format::String = "pdf")
 end
 #---------------------------------------------------------------------------------------------------
 
-StylizedFacts("CoinTossX")
-PriceImpact("CoinTossX")
+date = DateTime("2019-07-08")
+startTime = date + Hour(9) + Minute(1)
+endTime = date + Hour(17) # Hour(16) + Minute(59) + Second(59)
+# StylizedFacts("JSE", startTime, endTime)
+# PriceImpact("JSE", startTime, endTime)
+StylizedFacts("CoinTossX", startTime, endTime)
+PriceImpact("CoinTossX", startTime, endTime)
 DepthProfile("CoinTossX")
