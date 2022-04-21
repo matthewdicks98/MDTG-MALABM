@@ -33,3 +33,7 @@ Images/JSE/
 # Data files
 Data/CoinTossX/
 Data/JSE/
+Data/SensitivityAnalysis
+
+# bash scripts
+BashScripts/

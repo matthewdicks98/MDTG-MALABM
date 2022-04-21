@@ -1,7 +1,7 @@
+ENV["JULIA_COPY_STACKS"]=1
 using JavaCall, Rocket, Sockets, Random, Dates, Distributions, Plots, CSV, DataFrames
 import Rocket.scheduled_next!
 
-ENV["JULIA_COPY_STACKS"]=1
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 include(path_to_files * "Scripts/CoinTossXUtilities.jl")
 
@@ -17,10 +17,12 @@ function Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
             println("------------------- Port: " * message_loc_time) # keep for testing
         end
     catch e
-        println("Fixing EOF Error")
-        @error "Something went wrong" exception=(e, catch_backtrace())
-    finally
-        close(receiver)
+        if e isa EOFError
+            println("\nEOF error caused by closing of socket connection\n")
+        else
+            println(e)
+            @error "Something went wrong" exception=(e, catch_backtrace())
+        end
     end
 end
 #---------------------------------------------------------------------------------------------------
@@ -130,7 +132,7 @@ struct Parameters
     γ::Millisecond # the Time In Force (time the order stays in the order book until manually cancelled by the agent)
     T::Millisecond # Simulation time
     seed::Int64
-	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 8, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, λmin = 0.0005, λmax = 0.3, γ = Millisecond(300), T = Millisecond(3600 * 1000), seed = 1)
+	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 30, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, λmin = 0.0005, λmax = 0.05, γ = Millisecond(1000), T = Millisecond(25000), seed = 1)
 		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T, seed)
 	end
 end 
@@ -407,18 +409,8 @@ end
 
 function nextState(subject::Subject, LOB::LOBState, parameters::Parameters)
     not_activated = Vector{Any}()
-    count_listeners = 1
     for listener in subject.listeners
-        if count_listeners <= parameters.Nᴴ
-            scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
-        else
-            if rand(Uniform(0,1)) > 0.5
-                scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
-            else
-                push!(not_activated, listener)
-            end  
-        end 
-        count_listeners += 1
+        push!(not_activated, listener)
     end
     while length(not_activated) > 0
         listener = rand(not_activated)
@@ -566,7 +558,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Initialize LOB -----#
-function InitializeLOB(LOB::LOBState, parameters::Parameters, messages_chnl::Channel, source::Subject)
+function InitializeLOB(LOB::LOBState, messages_chnl::Channel, source::Subject)
     # TODO (1) Write initial orders to a file
 
     # always leave a message in the channel so that when the sim starts agents have an event to trade off
@@ -579,7 +571,7 @@ function InitializeLOB(LOB::LOBState, parameters::Parameters, messages_chnl::Cha
         # send the event to be processed by the actors
         if event_counter <= number_initial_messages
             # ask the hf agents to trade
-            next!(source, LOB)
+            Rocket.next!(source, LOB)
         elseif isready(messages_chnl) # if there are messages in the channel then take the last update
 
             message = take!(messages_chnl)
@@ -612,18 +604,18 @@ end
 
 ###################### Tommorow
 #                      (1) 
-
-function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plot::Bool, write::Bool) 
-
-    # set the seed to ensure reproducibility
-    Random.seed!(parameters.seed)
+function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write::Bool)
 
     # define some storage
     global event_counter = 0
     global max_events = 10000 # after initialization
-    global gateway = gateway
+    global gateway = g
+    global parameters = p
     global initial_messages_received = Vector{String}() # stores all initialization messages
     global messages_received = Vector{String}()         # stores all messages after initialization
+
+    # set the seed to ensure reproducibility
+    Random.seed!(parameters.seed)
 
     # open the channel that stores all the messages read from the UDP buffer
     chnl_size = Inf
@@ -635,7 +627,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     # open the UDP socket
     receiver = UDPSocket()
     connected = bind(receiver, ip"127.0.0.1", 1234)
-    status = @async Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
+    task = @async Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
 
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
@@ -675,7 +667,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     global initializing = true
     global number_initial_messages = 1001
-    global initializing = InitializeLOB(LOB, parameters, messages_chnl, source) # takes about 3.2 seconds
+    global initializing = InitializeLOB(LOB, messages_chnl, source) # takes about 3.2 seconds
 
     # push start state info to the prices
     push!(mid_prices, LOB.mₜ)
@@ -713,60 +705,68 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     global start_time = Dates.now()
 
     #Dates.now() - current_time <= parameters.T
-    @time while true
-        
-        # Sleep the main task for a tiny amount of time to switch to the listening task
-        sleep(0.05) # 1 microsecond
+    try
+        @time while true
+            
+            # Sleep the main task for a tiny amount of time to switch to the listening task
+            println("Task In")
+            sleep(0.05) # 1 microsecond
+            println("Task Out")
 
-        # send the event to be processed by the actors
-        if isready(messages_chnl) # if there are messages in the channel then take the last update
+            # send the event to be processed by the actors
+            if isready(messages_chnl) # if there are messages in the channel then take the last update
 
-            # update the LOB with all the new events
-            while isready(messages_chnl)
+                # update the LOB with all the new events
+                while isready(messages_chnl)
 
-                message = take!(messages_chnl)
-                
-                # update the LOBState with new order 
-                UpdateLOBState!(LOB, message)
+                    message = take!(messages_chnl)
+                    
+                    # update the LOBState with new order 
+                    UpdateLOBState!(LOB, message)
 
-                # Update running prices
-                push!(mid_prices, LOB.mₜ)
-                push!(micro_prices, LOB.microPrice)
+                    # Update running prices
+                    push!(mid_prices, LOB.mₜ)
+                    push!(micro_prices, LOB.microPrice)
 
-                # Update running state info
-                if print_and_plot
-                    push!(best_bids, LOB.bₜ)
-                    push!(best_asks, LOB.aₜ)
-                    for i in 1:Nᴸₜ
-                        push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
+                    # Update running state info
+                    if print_and_plot
+                        push!(best_bids, LOB.bₜ)
+                        push!(best_asks, LOB.aₜ)
+                        for i in 1:Nᴸₜ
+                            push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
+                        end
+                        for i in 1:Nᴸᵥ
+                            push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
+                        end
+                        push!(spreads, LOB.sₜ)
+                        push!(imbalances, LOB.ρₜ)
+                        if length(LOB.asks) > 0
+                            push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
+                        end
+                        if length(LOB.bids) > 0
+                            push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+                        end
                     end
-                    for i in 1:Nᴸᵥ
-                        push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
-                    end
-                    push!(spreads, LOB.sₜ)
-                    push!(imbalances, LOB.ρₜ)
-                    if length(LOB.asks) > 0
-                        push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
-                    end
-                    if length(LOB.bids) > 0
-                        push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
-                    end
+
                 end
 
+                # check if the actors want to act based on the updated state
+                Rocket.next!(source, LOB)
+
+            else
+                break
             end
-
-            # check if the actors want to act based on the updated state
-            next!(source, LOB)
-
-        else
-            break
         end
-
+    catch e
+        println(e)
+        @error "Something went wrong" exception=(e, catch_backtrace())
     end
-    
     #---------------------------------------------------------------------------------------------------
 
-    # close the Socket
+    # Close the channel
+    close(messages_chnl)
+
+    # close the Socket (can generate and EOF error in the async task at the end of the sim)
     close(receiver)
 
     # Print summary stats and plot test images 

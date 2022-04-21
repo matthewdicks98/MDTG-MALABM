@@ -120,12 +120,28 @@ Output:
 =#
 function ProcessMarketOrder!(file::IOStream, order::DataFrameRow, nextOrder::Symbol, best::Best, contraBest::Best, lob::Dict{Int64, Order}, side::Int64)
     contraOrder = lob[order.OrderId] # Extract order on contra side
+    # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
+    #     println()
+    #     println(order.OrderId)
+    #     println(order.Volume)
+    #     println(contraOrder.Volume)
+    #     println(best.Volume)
+    #     println(best.IDs)
+    #     println(contraBest.Volume)
+    # end
     if order.Volume == best.Volume # Trade filled best - remove from LOB, and update best
         delete!(lob, order.OrderId) # Remove the order from the LOB
         if !isempty(lob) # If the LOB is non empty find the best
             bestPrice = side * maximum(x -> side * x.Price, values(lob)) # Find the new best price (bid => side == 1 so find max price) (ask => side == -1 so find min price)
             indeces = [k for (k, v) in lob if v.Price == bestPrice] # Find the order ids of the best
             best.Price = bestPrice; best.Volume = sum(lob[i].Volume for i in indeces); best.IDs = indeces # Update the best
+            # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
+            #     println("New Indeces")
+            #     for i in indeces
+            #         println("Id: ", i, " Volume: ", lob[i].Volume)
+            #     end
+            #     println()
+            # end
         else # If the LOB is empty remove best
             best.Price = 0; best.Volume = 0; best.IDs = Vector{Int64}()
         end
@@ -133,6 +149,17 @@ function ProcessMarketOrder!(file::IOStream, order::DataFrameRow, nextOrder::Sym
         if order.Volume == contraOrder.Volume # Trade filled contra order - remove order from LOB, remove order from best, and update best
             delete!(lob, order.OrderId)
             best.Volume -= order.Volume; best.IDs = setdiff(best.IDs, order.OrderId)
+            # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
+            #     println("Here")
+            #     println(order.OrderId)
+            #     println(order.Volume)
+            #     println(contraOrder.Volume)
+            #     println(best.Volume)
+            #     println(best.IDs)
+            #     println(contraBest.Volume)
+            #     println("here2")
+            #     println()
+            # end
         else # Trade partially filled contra order - update LOB, update best
             lob[order.OrderId].Volume -= order.Volume
             best.Volume -= order.Volume
@@ -224,7 +251,8 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
 
                     ## Deal with LOs that crossed the spread
                     # LO that crossed the spread, if id not in bids and it is the last trade for the agent, the last field is the new LO
-                    if orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(bids))
+                    # check if last trade in trades, check if traders are equal or if trades are equal then the times must be diff
+                    if (orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(bids))) || (orders[i, :Trader] == orders[i + 1, :Trader] && orders[i, :DateTime] != orders[i+1, :DateTime] && !(order.OrderId in keys(bids)))
 
                         # Combined sell trade is printed after the last split trade with VWAP price
                         indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):(i-1)
@@ -250,7 +278,7 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                             push!(LO_ask_delay, order)
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
-                    elseif orders[i, :Trader] != orders[i + 1, :Trader]
+                    elseif (orders[i, :Trader] != orders[i + 1, :Trader]) || (orders[i, :Trader] == orders[i + 1, :Trader] && orders[i, :DateTime] != orders[i+1, :DateTime]) 
                         # find trades just made by a given agent
                         indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):i
                         agent_trades = orders[indeces,:]
@@ -270,10 +298,14 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
 
                     ## Deal with LOs that crossed the spread
                     # LO that crossed the spread, if id not in asks and it is the last trade for the agent, the last field is the new LO
-                    if orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(asks))
+                    if orders[i, :Trader] != orders[i + 1, :Trader] && !(order.OrderId in keys(asks)) || (orders[i, :Trader] == orders[i + 1, :Trader] && orders[i, :DateTime] != orders[i+1, :DateTime] && !(order.OrderId in keys(asks)))
 
                         # Combined sell trade is printed after the last split trade with VWAP price
                         indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):(i-1)
+                        # println("Current Indeces")
+                        # println(orders[i,:])
+                        # println("Volume: ", orders[indeces, :])
+                        # println()
                         println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,1,missing,missing,missing"))
                         
                         # print the updated bests bid due to the trade
@@ -296,7 +328,7 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                             push!(LO_bid_delay, order)
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
-                    elseif orders[i, :Trader] != orders[i + 1, :Trader]
+                    elseif (orders[i, :Trader] != orders[i + 1, :Trader]) || (orders[i, :Trader] == orders[i + 1, :Trader] && orders[i, :DateTime] != orders[i+1, :DateTime])
                         # find trades just made by a given agent
                         indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):i
                         agent_trades = orders[indeces,:]

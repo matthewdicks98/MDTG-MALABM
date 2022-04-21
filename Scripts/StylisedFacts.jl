@@ -207,9 +207,12 @@ function PriceImpact(exchange::String, startTime::DateTime, endTime::DateTime; f
 end
 #---------------------------------------------------------------------------------------------------
 
+# make sure these are the same as the ones used in the sensitivity analysis
 date = DateTime("2019-07-08")
 startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(17) # Hour(16) + Minute(59) + Second(59)
+endTime = date + Hour(17)
+
+
 # StylizedFacts("JSE", startTime, endTime)
 # PriceImpact("JSE", startTime, endTime)
 StylizedFacts("CoinTossX", startTime, endTime)
