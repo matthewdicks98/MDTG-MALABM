@@ -34,7 +34,7 @@ function GenerateParameterCombinations(NᴸₜRange::Vector{Int64}, NᴸᵥRange
                 for κ in κRange
                     for ν in νRange
                         for σᵥ in σᵥRange
-                            parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = 30, δ = δ, κ = κ, ν = ν, m₀ = 10000, σᵥ = σᵥ, λmin = 0.0005, λmax = 0.05, γ = Millisecond(1000), T = Millisecond(25000), seed = 1)
+                            parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = 30, δ = δ, κ = κ, ν = ν, m₀ = 10000, σᵥ = σᵥ, λmin = 0.0005, λmax = 0.05, γ = Millisecond(1000), T = Millisecond(25000))
                             push!(parameterCombinations, parameters)
                         end
                     end
@@ -53,25 +53,23 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
     gateway = Login(1, 1)
     open("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv", "w") do file
         println(file, "Type,Nt,Nv,Nh,Delta,Kappa,Nu,M0,SigmaV,LambdaMin,LambdaMax,Gamma,T,Seed,Mean,Std,Kurtosis,KS,Hurst,GPH,ADF,GARCH,Hill")
-        for (i, parameters) in enumerate(parameterCombinations[1:20]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
+        for (i, parameters) in enumerate(parameterCombinations[1:2]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
             try 
                 println("\nParameter Set: $(i)\n")
-                StartLOB(gateway)   # start new LOB
-                midPrices, microPrices = simulate(parameters, gateway, false, false)
+                seed = 1
+                midPrices, microPrices = simulate(parameters, gateway, false, false, seed = seed)
                 filter!(x -> !ismissing(x) && !(isnan(x)), midPrices); filter!(x -> !ismissing(x) && !(isnan(x)), microPrices)
                 midPriceLogReturns = diff(log.(midPrices))
                 microPriceLogReturns = diff(log.(microPrices))
                 simulatedMidPriceMoments = Moments(midPriceLogReturns, empericalLogReturns.MidPriceLogReturns)
                 simulatedMicroPriceMoments = Moments(microPriceLogReturns, empericalLogReturns.MicroPriceLogReturns)
-                println(file, "MidPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", parameters.seed, ",", simulatedMidPriceMoments.μ, ",", simulatedMidPriceMoments.σ, ",", simulatedMidPriceMoments.κ, ",", simulatedMidPriceMoments.ks, ",", simulatedMidPriceMoments.hurst, ",", simulatedMidPriceMoments.gph, ",", simulatedMidPriceMoments.adf, ",", simulatedMidPriceMoments.garch, ",", simulatedMidPriceMoments.hill)
-                println(file, "MicroPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", parameters.seed, ",", simulatedMicroPriceMoments.μ, ",", simulatedMicroPriceMoments.σ, ",", simulatedMicroPriceMoments.κ, ",", simulatedMicroPriceMoments.ks, ",", simulatedMicroPriceMoments.hurst, ",", simulatedMicroPriceMoments.gph, ",", simulatedMicroPriceMoments.adf, ",", simulatedMicroPriceMoments.garch, ",", simulatedMicroPriceMoments.hill)
-                EndLOB(gateway)     # clear the old LOB
+                println(file, "MidPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", simulatedMidPriceMoments.μ, ",", simulatedMidPriceMoments.σ, ",", simulatedMidPriceMoments.κ, ",", simulatedMidPriceMoments.ks, ",", simulatedMidPriceMoments.hurst, ",", simulatedMidPriceMoments.gph, ",", simulatedMidPriceMoments.adf, ",", simulatedMidPriceMoments.garch, ",", simulatedMidPriceMoments.hill)
+                println(file, "MicroPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", simulatedMicroPriceMoments.μ, ",", simulatedMicroPriceMoments.σ, ",", simulatedMicroPriceMoments.κ, ",", simulatedMicroPriceMoments.ks, ",", simulatedMicroPriceMoments.hurst, ",", simulatedMicroPriceMoments.gph, ",", simulatedMicroPriceMoments.adf, ",", simulatedMicroPriceMoments.garch, ",", simulatedMicroPriceMoments.hill)
                 GC.gc()             # perform garbage collection
             catch e
                 println(e)
-                @error "Something went wrong" exception=(e, catch_backtrace()) # write nans to file
-                close(file)
-                EndLOB(gateway)
+                println(file, "MidPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN)
+                println(file, "MicroPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN)
             end
         end 
     end
@@ -83,7 +81,7 @@ end
 # collect the comand line arguments
 parameterCombinationsRange = map(x -> parse(Int64, x), ARGS)
 
-# make sure these are the same for the stylized facts
+# make sure these are the same for the stylized facts and Calibration
 date = DateTime("2019-07-08")
 startTime = date + Hour(9) + Minute(1)
 endTime = date + Hour(17)

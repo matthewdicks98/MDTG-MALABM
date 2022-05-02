@@ -6,7 +6,7 @@ path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MA
 include(path_to_files * "Scripts/CoinTossXUtilities.jl")
 
 #----- Listen for messages -----#
-function Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
+function Listen(receiver, messages_chnl, messages_received)
     try 
         while true
             message_loc = String(recv(receiver))
@@ -14,7 +14,7 @@ function Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            println("------------------- Port: " * message_loc_time) # keep for testing
+            println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
         end
     catch e
         if e isa EOFError
@@ -29,7 +29,7 @@ end
 
 #----- Summary Stuff Used For Testing -----# 
 
-function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec)
+function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received)
     println("Messages received: " * string(length(messages_received)))
 
     println("Number of asks: " * string(length(LOB.asks)))
@@ -118,7 +118,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Auxilary Structures -----#
-struct Parameters
+mutable struct Parameters
     Nᴸₜ::Int64 # Number of chartists for the low-frequency agent class
     Nᴸᵥ::Int64 # Number of fundamentalists for the low-frequency agent class
     Nᴴ::Int64 # Number of high-frequency agents
@@ -131,9 +131,8 @@ struct Parameters
     λmax::Float64 # max of the uniform dist for the forgetting factor of the chartist
     γ::Millisecond # the Time In Force (time the order stays in the order book until manually cancelled by the agent)
     T::Millisecond # Simulation time
-    seed::Int64
-	function Parameters(; Nᴸₜ = 1, Nᴸᵥ = 1, Nᴴ = 30, δ = 0.03, κ = 2.5, ν = 2, m₀ = 10000, σᵥ = 0.01, λmin = 0.0005, λmax = 0.05, γ = Millisecond(1000), T = Millisecond(25000), seed = 1)
-		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T, seed)
+	function Parameters(; Nᴸₜ = 5, Nᴸᵥ = 5, Nᴴ = 30, δ = 0.1 , κ = 3.5, ν = 5, m₀ = 10000, σᵥ = 0.015, λmin = 0.0005, λmax = 0.05, γ = Millisecond(10), T = Millisecond(5000)) # 1000, 25000
+		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T)
 	end
 end 
 mutable struct LimitOrder
@@ -159,21 +158,32 @@ mutable struct LOBState
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- State Structure -----#
+mutable struct SimulationState
+    LOB::LOBState
+    parameters::Parameters
+    gateway::TradingGateway
+    initializing::Bool
+    event_counter::Int64
+end
+#---------------------------------------------------------------------------------------------------
+
+
 #----- Agent Structures -----# (all actors accept the string message as input)
-mutable struct Chartist <: Actor{LOBState}
+mutable struct Chartist <: Actor{SimulationState}
     traderId::Int64 # uniquely identifies an agent
     traderMnemonic::String # used to record who sent the orders
     p̄ₜ::Float64 # Agent's mid-price EWMA
     actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
     λ::Float64 # forgetting factor
 end
-mutable struct Fundamentalist <: Actor{LOBState}
+mutable struct Fundamentalist <: Actor{SimulationState}
     traderId::Int64 # uniquely identifies an agent
     traderMnemonic::String # used to record who sent the orders
     fₜ::Float64 # Current perceived value
     actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
 end
-mutable struct HighFrequency <: Actor{LOBState}
+mutable struct HighFrequency <: Actor{SimulationState}
     traderId::Int64 # uniquely identifies an agent
     traderMnemonic::String # used to record who sent the orders
     actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a trade
@@ -182,35 +192,35 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Agent rules -----# 
-function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, parameters::Parameters)
+function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::SimulationState)
     # TODO: Cancellations
 
     # do not trade if trading time is finished
-    if !(initializing)
-        if !(Dates.now() - start_time < parameters.T)
+    if !(simulationstate.initializing)
+        if !(Dates.now() - start_time < simulationstate.parameters.T)
             return
         end
     end
 
     # cancel orders that have not been matched (dont have to account for the order being in the book or not since an empty message is sent back from CTX)
-    if !(initializing) && length(highfrquency.currentOrders) > 0 # dont cancell orders during initialization and make sure there are orders to cancel
+    if !(simulationstate.initializing) && length(highfrquency.currentOrders) > 0 # dont cancell orders during initialization and make sure there are orders to cancel
         # check if oldest order needs to be cancelled
-        if Dates.now() - highfrquency.currentOrders[1][1] > parameters.γ
+        if Dates.now() - highfrquency.currentOrders[1][1] > simulationstate.parameters.γ
 
             # find all orders that need to be cancelled
-            timed_out_inds = findall(x -> Dates.now() - x[1] > parameters.γ, highfrquency.currentOrders)
+            timed_out_inds = findall(x -> Dates.now() - x[1] > simulationstate.parameters.γ, highfrquency.currentOrders)
 
             # get all the orders that are in the LOB
             cancel_inds = Vector{Int64}()
             for ind in timed_out_inds
-                if (highfrquency.currentOrders[ind][2].orderId in keys(LOB.bids)) || (highfrquency.currentOrders[ind][2].orderId in keys(LOB.asks))
+                if (highfrquency.currentOrders[ind][2].orderId in keys(simulationstate.LOB.bids)) || (highfrquency.currentOrders[ind][2].orderId in keys(simulationstate.LOB.asks))
                     push!(cancel_inds, ind)
                 end
             end
 
             # send cancellation orders through
             for ind in cancel_inds
-                CancelOrder(gateway, highfrquency.currentOrders[ind][2])
+                CancelOrder(simulationstate.gateway, highfrquency.currentOrders[ind][2])
             end
             
             # delete the orders from the currentOrders array
@@ -219,72 +229,72 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, LOB::LOBState, pa
         end
     end
 
-    order = Order(orderId = event_counter, traderMnemonic = string("HF", highfrquency.traderId), type = "Limit")
+    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("HF", highfrquency.traderId), type = "Limit")
 
-    θ = LOB.ρₜ/2 + .5 # Probability of placing an ask
+    θ = simulationstate.LOB.ρₜ/2 + .5 # Probability of placing an ask
     order.side = rand() < θ ? "Sell" : "Buy"
     if order.side == "Sell"
-        α = 1 - (LOB.ρₜ/parameters.ν) # Shape for power law
+        α = 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) # Shape for power law
 
         # if spread is 0 set η = 0
-        if LOB.sₜ == 0
+        if simulationstate.LOB.sₜ == 0
             η = 0
         else
-            η = floor(rand(Gamma(LOB.sₜ, exp(LOB.ρₜ / parameters.κ))))
+            η = floor(rand(Gamma(simulationstate.LOB.sₜ, exp(simulationstate.LOB.ρₜ / simulationstate.parameters.κ))))
         end
 
-        order.price = LOB.bₜ + 1 + η
+        order.price = maximum([0, simulationstate.LOB.bₜ + 1 + η]) # ensure that there are no offers with negative prices
         order.volume = round(Int, PowerLaw(5, α))
         order.displayVolume = order.volume
     else
-        α = 1 + (LOB.ρₜ/parameters.ν)
+        α = 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
 
         # if spread is 0 set η = 0
-        if LOB.sₜ == 0
+        if simulationstate.LOB.sₜ == 0
             η = 0
         else
-            η = floor(rand(Gamma(LOB.sₜ, exp(-LOB.ρₜ / parameters.κ))))
+            η = floor(rand(Gamma(simulationstate.LOB.sₜ, exp(-simulationstate.LOB.ρₜ / simulationstate.parameters.κ))))
         end
 
-        order.price = LOB.aₜ - 1 -  η
+        order.price = maximum([0, simulationstate.LOB.aₜ - 1 -  η]) # ensure that there are no bids with negative prices
         order.volume = round(Int, PowerLaw(5, α))
         order.displayVolume = order.volume
     end
 
     # only record event times if they are after the initializing of the LOB
-    if !(initializing)
-        SubmitOrder(gateway, order)
+    if !(simulationstate.initializing)
+        SubmitOrder(simulationstate.gateway, order)
         current_time = Dates.now()
         push!(highfrquency.actionTimes, current_time - start_time)
         push!(highfrquency.currentOrders, (current_time, order))
-        global event_counter += 1
+        simulationstate.event_counter += 1
     else
         # if initializing do not allow agents to submit an order in the spread
-        if (order.price > LOB.aₜ) || (order.price < LOB.bₜ)
-            SubmitOrder(gateway, order)
+        if (order.price > simulationstate.LOB.aₜ) || (order.price < simulationstate.LOB.bₜ)
+            SubmitOrder(simulationstate.gateway, order)
             #current_time = Dates.now()
             #push!(highfrquency.currentOrders, (current_time, order))
-            global event_counter += 1
+            simulationstate.event_counter += 1
         end
     end
     
 end
-function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameters)
+function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
     # TODO: 
 
     # if the order book is being initialized do nothing
-    if initializing 
+    if simulationstate.initializing 
         return
     end
 
-    if !(Dates.now() - start_time < parameters.T)
+    if !(Dates.now() - start_time < simulationstate.parameters.T)
         return
     end
 
-    order = Order(orderId = event_counter, traderMnemonic = string("TF", chartist.traderId), type = "Market")
+    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("TF", chartist.traderId), type = "Market")
 
     # Update the agent's EWMA
-    chartist.p̄ₜ += chartist.λ * (LOB.mₜ - chartist.p̄ₜ) # took away the lambda
+    chartist.p̄ₜ += chartist.λ * (simulationstate.LOB.mₜ - chartist.p̄ₜ) # took away the lambda
 
     ######## Set agent's actions
 
@@ -294,9 +304,9 @@ function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameter
     # boolean saying if the order will cause a volatility auction (assume it won't)
     volatility = false
 
-    if chartist.p̄ₜ > LOB.mₜ + (1/2) * LOB.sₜ  
+    if chartist.p̄ₜ > simulationstate.LOB.mₜ + (1/2) * simulationstate.LOB.sₜ  
         order.side = "Sell"
-    elseif chartist.p̄ₜ < LOB.mₜ - (1/2) * LOB.sₜ 
+    elseif chartist.p̄ₜ < simulationstate.LOB.mₜ - (1/2) * simulationstate.LOB.sₜ 
         order.side = "Buy"
     else # if there this agent is not trading then return
         return
@@ -304,21 +314,21 @@ function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameter
 
     # set the order parameters
     xₘ = 20
-    if abs(LOB.mₜ - chartist.p̄ₜ) > (parameters.δ * LOB.mₜ)
+    if abs(simulationstate.LOB.mₜ - chartist.p̄ₜ) > (simulationstate.parameters.δ * simulationstate.LOB.mₜ)
         xₘ = 50
     end
-    α = order.side == "Sell" ? 1 - (LOB.ρₜ/parameters.ν) : 1 + (LOB.ρₜ/parameters.ν)
-	if (order.side == "Buy" && !isempty(LOB.asks)) || (order.side == "Sell" && !isempty(LOB.bids)) # Agent won't submit MO if no orders on contra side
+    α = order.side == "Sell" ? 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) : 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
+	if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids)) # Agent won't submit MO if no orders on contra side
 		order.volume = round(Int, PowerLaw(xₘ, α))
         contra = true
 	end
     if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
-        if (abs(LOB.priceReference - LOB.bₜ) / LOB.priceReference) > 0.1
+        if (abs(simulationstate.LOB.priceReference - simulationstate.LOB.bₜ) / simulationstate.LOB.priceReference) > 0.1
             order.volume = 0
             volatility = true
         end
     else
-        if (abs(LOB.aₜ - LOB.priceReference) / LOB.priceReference) > 0.1
+        if (abs(simulationstate.LOB.aₜ - simulationstate.LOB.priceReference) / simulationstate.LOB.priceReference) > 0.1
             order.volume = 0
             volatility = true
         end
@@ -328,15 +338,15 @@ function ChartistAction(chartist::Chartist, LOB::LOBState, parameters::Parameter
 
     # submit order if there are orders on the other side and if the order won't cause a volatility auction
     if (contra) && !(volatility)
-        SubmitOrder(gateway, order)
+        SubmitOrder(simulationstate.gateway, order)
         push!(chartist.actionTimes, Dates.now() - start_time)
-        global event_counter += 1
+        simulationstate.event_counter += 1
     else # if there are no contra orders or a volatility auction might happen return
         return
     end
 end
 
-function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, parameters::Parameters)
+function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::SimulationState)
     # TODO: (1) Check the generation of the mid-price
 
     # if (event_counter > max_events + number_initial_messages)
@@ -344,15 +354,15 @@ function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, par
     # end
 
     # if the order book is being initialized do nothing
-    if initializing 
+    if simulationstate.initializing 
         return
     end
     
-    if !(Dates.now() - start_time < parameters.T)
+    if !(Dates.now() - start_time < simulationstate.parameters.T)
         return
     end
 
-    order = Order(orderId = event_counter, traderMnemonic = string("VI", fundamentalist.traderId), type = "Market")
+    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("VI", fundamentalist.traderId), type = "Market")
 
     ######## Set agent's actions
 
@@ -362,9 +372,9 @@ function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, par
     # boolean saying if the order will cause a volatility auction (assume it won't)
     volatility = false
 
-    if fundamentalist.fₜ < LOB.mₜ - (1/2) * LOB.sₜ  
+    if fundamentalist.fₜ < simulationstate.LOB.mₜ - (1/2) * simulationstate.LOB.sₜ  
         order.side = "Sell"
-    elseif fundamentalist.fₜ > LOB.mₜ + (1/2) * LOB.sₜ 
+    elseif fundamentalist.fₜ > simulationstate.LOB.mₜ + (1/2) * simulationstate.LOB.sₜ 
         order.side = "Buy"
     else # if this agent is not trading then return
         return
@@ -372,22 +382,22 @@ function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, par
 
     # set the parameters of the order
     xₘ = 20
-    if abs(LOB.mₜ - fundamentalist.fₜ) > (parameters.δ * LOB.mₜ)
+    if abs(simulationstate.LOB.mₜ - fundamentalist.fₜ) > (simulationstate.parameters.δ * simulationstate.LOB.mₜ)
         xₘ = 50
     end
     # order.side = fundamentalist.fₜ < LOB.mₜ ? "Sell" : "Buy" # NEED TO CHANGE
-    α = order.side == "Sell" ? 1 - (LOB.ρₜ/parameters.ν) : 1 + (LOB.ρₜ/parameters.ν)
-	if (order.side == "Buy" && !isempty(LOB.asks)) || (order.side == "Sell" && !isempty(LOB.bids))
+    α = order.side == "Sell" ? 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) : 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
+	if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids))
         order.volume = round(Int, PowerLaw(xₘ, α))
         contra = true
 	end
     if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
-        if (abs(LOB.priceReference - LOB.bₜ) / LOB.priceReference) > 0.1
+        if (abs(simulationstate.LOB.priceReference - simulationstate.LOB.bₜ) / simulationstate.LOB.priceReference) > 0.1
             order.volume = 0
             volatility = true
         end
     else
-        if (abs(LOB.aₜ - LOB.priceReference) / LOB.priceReference) > 0.1
+        if (abs(simulationstate.LOB.aₜ - simulationstate.LOB.priceReference) / simulationstate.LOB.priceReference) > 0.1
             order.volume = 0
             volatility = true
         end
@@ -395,9 +405,9 @@ function FundamentalistAction(fundamentalist::Fundamentalist, LOB::LOBState, par
 
     # submit order if there are orders on the other side and if the order won't cause a volatility auction
     if (contra) && !(volatility)
-        SubmitOrder(gateway, order)
+        SubmitOrder(simulationstate.gateway, order)
         push!(fundamentalist.actionTimes, Dates.now() - start_time)
-        global event_counter += 1
+        simulationstate.event_counter += 1
     else
         return
     end
@@ -407,14 +417,14 @@ end
 
 #----- Define How Subject Passes Messages to Actors -----#
 
-function nextState(subject::Subject, LOB::LOBState, parameters::Parameters)
+function nextState(subject::Subject, simulationstate::SimulationState)
     not_activated = Vector{Any}()
     for listener in subject.listeners
         push!(not_activated, listener)
     end
     while length(not_activated) > 0
         listener = rand(not_activated)
-        scheduled_next!(listener.actor, LOB, listener.schedulerinstance)
+        scheduled_next!(listener.actor, simulationstate, listener.schedulerinstance)
         filter!(x -> x != listener, not_activated)
     end
 end
@@ -424,17 +434,17 @@ end
 #----- Define Actor Actions -----#
 
 # HF
-Rocket.on_next!(actor::HighFrequency, LOB::LOBState) = HighFrequencyAgentAction(actor, LOB, parameters)
+Rocket.on_next!(actor::HighFrequency, simulationstate::SimulationState) = HighFrequencyAgentAction(actor, simulationstate)
 Rocket.on_error!(actor::HighFrequency, err)      = error(err)
 Rocket.on_complete!(actor::HighFrequency)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
 # chartists
-Rocket.on_next!(actor::Chartist, LOB::LOBState) = ChartistAction(actor, LOB, parameters)
+Rocket.on_next!(actor::Chartist, simulationstate::SimulationState) = ChartistAction(actor, simulationstate)
 Rocket.on_error!(actor::Chartist, err)      = error(err)
 Rocket.on_complete!(actor::Chartist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
 # fundamentalists
-Rocket.on_next!(actor::Fundamentalist, LOB::LOBState) = FundamentalistAction(actor, LOB, parameters)
+Rocket.on_next!(actor::Fundamentalist, simulationstate::SimulationState) = FundamentalistAction(actor, simulationstate)
 Rocket.on_error!(actor::Fundamentalist, err)      = error(err)
 Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
@@ -442,7 +452,7 @@ Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.trade
 
 #----- Define Subject -----#
 
-Rocket.on_next!(subject::Subject, LOB::LOBState) = nextState(subject, LOB, parameters)
+Rocket.on_next!(subject::Subject, simulationstate::SimulationState) = nextState(subject, simulationstate)
 
 #---------------------------------------------------------------------------------------------------
 
@@ -558,7 +568,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Initialize LOB -----#
-function InitializeLOB(LOB::LOBState, messages_chnl::Channel, source::Subject)
+function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel, source::Subject, number_initial_messages::Int64, initial_messages_received::Vector{String}, messages_received::Vector{String})
     # TODO (1) Write initial orders to a file
 
     # always leave a message in the channel so that when the sim starts agents have an event to trade off
@@ -569,9 +579,10 @@ function InitializeLOB(LOB::LOBState, messages_chnl::Channel, source::Subject)
         sleep(0.000001) # 1 microsecond
 
         # send the event to be processed by the actors
-        if event_counter <= number_initial_messages
+        if simulationstate.event_counter <= number_initial_messages
             # ask the hf agents to trade
-            Rocket.next!(source, LOB)
+            Rocket.next!(source, simulationstate)
+            # Rocket.next!(source, LOB)
         elseif isready(messages_chnl) # if there are messages in the channel then take the last update
 
             message = take!(messages_chnl)
@@ -583,7 +594,7 @@ function InitializeLOB(LOB::LOBState, messages_chnl::Channel, source::Subject)
             popfirst!(messages_received)
 
             # update the LOBState with new order 
-            UpdateLOBState!(LOB, message)
+            UpdateLOBState!(simulationstate.LOB, message)
         
             # if there is only 1 message in the array then there is 1 message in the channel so break the initialization
             # also clear the array so that we only keep the messages received from after the initialization
@@ -604,30 +615,37 @@ end
 
 ###################### Tommorow
 #                      (1) 
-function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write::Bool)
+function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plot::Bool, write::Bool; seed = 1)
+    # TODO: Refactor  
 
     # define some storage
-    global event_counter = 0
-    global max_events = 10000 # after initialization
-    global gateway = g
-    global parameters = p
-    global initial_messages_received = Vector{String}() # stores all initialization messages
-    global messages_received = Vector{String}()         # stores all messages after initialization
+    # global event_counter = 0
+    # global max_events = 10000 # after initialization
+    # global gateway = g
+    # global parameters = p
+    initial_messages_received = Vector{String}() # stores all initialization messages
+    messages_received = Vector{String}()         # stores all messages after initialization
+
+    # start new LOB (trading session)
+    StartLOB(gateway) 
 
     # set the seed to ensure reproducibility
-    Random.seed!(parameters.seed)
+    Random.seed!(seed)
 
     # open the channel that stores all the messages read from the UDP buffer
     chnl_size = Inf
     messages_chnl = Channel(chnl_size)
 
     # initialize LOBState (used to get agents subscribed)
-    global LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, 9980, 10020, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
+    LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
+
+    # Set the first subject messages
+    simulationstate = SimulationState(LOB, parameters, gateway, true, 0)
 
     # open the UDP socket
     receiver = UDPSocket()
     connected = bind(receiver, ip"127.0.0.1", 1234)
-    task = @async Listen(receiver, messages_chnl, messages_received, event_counter, LOB)
+    task = @async Listen(receiver, messages_chnl, messages_received)
 
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
@@ -635,8 +653,9 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
     fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
 
     # initialize the Subject and subscribe actors to it
-    source = Subject(LOBState)
+    source = Subject(SimulationState)
     map(i -> subscribe!(source, i), hf_traders_vec)
+
     map(i -> subscribe!(source, i), char_traders_vec)
     map(i -> subscribe!(source, i), fun_traders_vec)
 
@@ -663,38 +682,38 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
-    println("\n#################################################################### Initialization Started\n")
+    # println("\n#################################################################### Initialization Started\n")
 
-    global initializing = true
-    global number_initial_messages = 1001
-    global initializing = InitializeLOB(LOB, messages_chnl, source) # takes about 3.2 seconds
+    # global initializing = true
+    number_initial_messages = 1001
+    simulationstate.initializing = InitializeLOB(simulationstate, messages_chnl, source, number_initial_messages, initial_messages_received, messages_received) # takes about 3.2 seconds
 
     # push start state info to the prices
-    push!(mid_prices, LOB.mₜ)
-    push!(micro_prices, LOB.microPrice)
+    push!(mid_prices, simulationstate.LOB.mₜ)
+    push!(micro_prices, simulationstate.LOB.microPrice)
 
     # push start state info to the running totals
     if print_and_plot
-        push!(best_bids, LOB.bₜ)
-        push!(best_asks, LOB.aₜ)
+        push!(best_bids, simulationstate.LOB.bₜ)
+        push!(best_asks, simulationstate.LOB.aₜ)
         for i in 1:Nᴸₜ
             push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
         end
         for i in 1:Nᴸᵥ
             push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
         end
-        push!(spreads, LOB.sₜ)
-        push!(imbalances, LOB.ρₜ)
-        if length(LOB.asks) > 0
-            push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
+        push!(spreads, simulationstate.LOB.sₜ)
+        push!(imbalances, simulationstate.LOB.ρₜ)
+        if length(simulationstate.LOB.asks) > 0
+            push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
         end
         
-        if length(LOB.bids) > 0
-            push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+        if length(simulationstate.LOB.bids) > 0
+            push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
         end
     end
 
-    println("\n#################################################################### Initialization Done\n")
+    # println("\n#################################################################### Initialization Done\n")
 
     #----- Event Loop -----#
 
@@ -709,9 +728,9 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
         @time while true
             
             # Sleep the main task for a tiny amount of time to switch to the listening task
-            println("Task In")
-            sleep(0.05) # 1 microsecond
-            println("Task Out")
+            # println("Task In")
+            sleep(0.05)
+            # println("Task Out")
 
             # send the event to be processed by the actors
             if isready(messages_chnl) # if there are messages in the channel then take the last update
@@ -722,36 +741,36 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
                     message = take!(messages_chnl)
                     
                     # update the LOBState with new order 
-                    UpdateLOBState!(LOB, message)
+                    UpdateLOBState!(simulationstate.LOB, message)
 
                     # Update running prices
-                    push!(mid_prices, LOB.mₜ)
-                    push!(micro_prices, LOB.microPrice)
+                    push!(mid_prices, simulationstate.LOB.mₜ)
+                    push!(micro_prices, simulationstate.LOB.microPrice)
 
                     # Update running state info
                     if print_and_plot
-                        push!(best_bids, LOB.bₜ)
-                        push!(best_asks, LOB.aₜ)
+                        push!(best_bids, simulationstate.LOB.bₜ)
+                        push!(best_asks, simulationstate.LOB.aₜ)
                         for i in 1:Nᴸₜ
                             push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
                         end
                         for i in 1:Nᴸᵥ
                             push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
                         end
-                        push!(spreads, LOB.sₜ)
-                        push!(imbalances, LOB.ρₜ)
-                        if length(LOB.asks) > 0
-                            push!(ask_volumes, sum(order.volume for order in values(LOB.asks)))
+                        push!(spreads, simulationstate.LOB.sₜ)
+                        push!(imbalances, simulationstate.LOB.ρₜ)
+                        if length(simulationstate.LOB.asks) > 0
+                            push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
                         end
-                        if length(LOB.bids) > 0
-                            push!(bid_volumes, sum(order.volume for order in values(LOB.bids)))
+                        if length(simulationstate.LOB.bids) > 0
+                            push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
                         end
                     end
 
                 end
 
                 # check if the actors want to act based on the updated state
-                Rocket.next!(source, LOB)
+                Rocket.next!(source, simulationstate)
 
             else
                 break
@@ -759,6 +778,12 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
         end
     catch e
         println(e)
+        # Close the channel
+        close(messages_chnl)
+        # close the Socket (can generate and EOF error in the async task at the end of the sim)
+        close(receiver)
+        # clear LOB and end trading session
+        EndLOB(gateway)
         @error "Something went wrong" exception=(e, catch_backtrace())
     end
     #---------------------------------------------------------------------------------------------------
@@ -769,9 +794,12 @@ function simulate(p::Parameters, g::TradingGateway, print_and_plot::Bool, write:
     # close the Socket (can generate and EOF error in the async task at the end of the sim)
     close(receiver)
 
+    # clear LOB and end trading session
+    EndLOB(gateway)
+
     # Print summary stats and plot test images 
     if print_and_plot
-        SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec)
+        SummaryAndTestImages(messages_chnl, simulationstate.LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received)
     end
 
     # write all the orders received after initialization to a file 

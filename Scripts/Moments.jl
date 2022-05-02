@@ -28,17 +28,17 @@ struct Moments # Moments of log-returns
     garch::Float64 # GARCH paramaters representing short-range dependence
     hill::Float64 # Hill estimator
     function Moments(logreturns1::Vector{Float64}, logreturns2::Vector{Float64})
-        μ = round(mean(logreturns1), digits = 3); σ = round(std(logreturns1), digits = 3); κ = round(kurtosis(logreturns1), digits = 3)
+        μ = mean(logreturns1); σ = std(logreturns1); κ = kurtosis(logreturns1)
         if logreturns1 == logreturns2 # due to ties we had that sometimes the ks stat would reject H₀ when logreturns1 == logreturns2
             ks = 0
         else
-            ks = round(ApproximateTwoSampleKSTest((logreturns1), (logreturns2)).δ, digits = 3)
+            ks = ApproximateTwoSampleKSTest((logreturns1), (logreturns2)).δ
         end
-        hurst = round(HurstExponent(logreturns1), digits = 3)
-        gph = round(GPH(abs.(logreturns1)), digits = 3)
-        adf = round(ADFTest(logreturns1, :none, 0).stat, digits = 3)
-        garch = round(sum(coef(ARCHModels.fit(GARCH{1, 1}, logreturns1))[2:3]), digits = 3)
-        hill = round(HillEstimator(logreturns1[findall(x -> (x >= quantile(logreturns1, 0.95)) && (x > 0), logreturns1)], 50), digits = 3)
+        hurst = HurstExponent(logreturns1)
+        gph = GPH(abs.(logreturns1))
+        adf = ADFTest(logreturns1, :none, 0).stat
+        garch = sum(coef(ARCHModels.fit(GARCH{1, 1}, logreturns1))[2:3])
+        hill = HillEstimator(logreturns1[findall(x -> (x >= quantile(logreturns1, 0.95)) && (x > 0), logreturns1)], 50)
         new(μ, σ, κ, ks, hurst, gph, adf, garch, hill)
     end
 end
