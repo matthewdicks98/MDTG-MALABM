@@ -165,6 +165,7 @@ mutable struct SimulationState
     gateway::TradingGateway
     initializing::Bool
     event_counter::Int64
+    start_time::DateTime
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -197,7 +198,7 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::
 
     # do not trade if trading time is finished
     if !(simulationstate.initializing)
-        if !(Dates.now() - start_time < simulationstate.parameters.T)
+        if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
             return
         end
     end
@@ -265,7 +266,7 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::
     if !(simulationstate.initializing)
         SubmitOrder(simulationstate.gateway, order)
         current_time = Dates.now()
-        push!(highfrquency.actionTimes, current_time - start_time)
+        push!(highfrquency.actionTimes, current_time - simulationstate.start_time)
         push!(highfrquency.currentOrders, (current_time, order))
         simulationstate.event_counter += 1
     else
@@ -287,7 +288,7 @@ function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
         return
     end
 
-    if !(Dates.now() - start_time < simulationstate.parameters.T)
+    if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
         return
     end
 
@@ -339,7 +340,7 @@ function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
     # submit order if there are orders on the other side and if the order won't cause a volatility auction
     if (contra) && !(volatility)
         SubmitOrder(simulationstate.gateway, order)
-        push!(chartist.actionTimes, Dates.now() - start_time)
+        push!(chartist.actionTimes, Dates.now() - simulationstate.start_time)
         simulationstate.event_counter += 1
     else # if there are no contra orders or a volatility auction might happen return
         return
@@ -358,7 +359,7 @@ function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::S
         return
     end
     
-    if !(Dates.now() - start_time < simulationstate.parameters.T)
+    if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
         return
     end
 
@@ -406,7 +407,7 @@ function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::S
     # submit order if there are orders on the other side and if the order won't cause a volatility auction
     if (contra) && !(volatility)
         SubmitOrder(simulationstate.gateway, order)
-        push!(fundamentalist.actionTimes, Dates.now() - start_time)
+        push!(fundamentalist.actionTimes, Dates.now() - simulationstate.start_time)
         simulationstate.event_counter += 1
     else
         return
@@ -574,35 +575,57 @@ function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel,
     # always leave a message in the channel so that when the sim starts agents have an event to trade off
     
     while true
-        
-        # Sleep the main task for a tiny amount of time to switch to the listening task
-        sleep(0.000001) # 1 microsecond
 
         # send the event to be processed by the actors
         if simulationstate.event_counter <= number_initial_messages
             # ask the hf agents to trade
             Rocket.next!(source, simulationstate)
-            # Rocket.next!(source, LOB)
-        elseif isready(messages_chnl) # if there are messages in the channel then take the last update
+        end
 
-            message = take!(messages_chnl)
+        # Sleep the main task for a tiny amount of time to switch to the listening task
+        sleep(0.05) # 1 microsecond
 
-            # push to the initial messages array
-            push!(initial_messages_received, message)
+        if isready(messages_chnl) && simulationstate.event_counter <= number_initial_messages # if there are messages in the channel then take the last update
 
-            # use the messages_recieved array to keep track of the number of messages in the channel
-            popfirst!(messages_received)
+            while isready(messages_chnl)
+                message = take!(messages_chnl)
 
-            # update the LOBState with new order 
-            UpdateLOBState!(simulationstate.LOB, message)
-        
-            # if there is only 1 message in the array then there is 1 message in the channel so break the initialization
-            # also clear the array so that we only keep the messages received from after the initialization
-            if length(messages_received) == 1
-                message = popfirst!(messages_received)
+                # push to the initial messages array
                 push!(initial_messages_received, message)
-                break
-            end
+
+                # use the messages_recieved array to keep track of the number of messages in the channel
+                popfirst!(messages_received)
+
+                # update the LOBState with new order 
+                UpdateLOBState!(simulationstate.LOB, message)
+
+            end 
+
+        elseif isready(messages_chnl) && simulationstate.event_counter > number_initial_messages
+
+            while isready(messages_chnl)
+                message = take!(messages_chnl)
+
+                # push to the initial messages array
+                push!(initial_messages_received, message)
+
+                # use the messages_recieved array to keep track of the number of messages in the channel
+                popfirst!(messages_received)
+
+                # update the LOBState with new order 
+                UpdateLOBState!(simulationstate.LOB, message)
+
+                # if there is only 1 message in the array then there is 1 message in the channel so break the initialization
+                # also clear the array so that we only keep the messages received from after the initialization
+                if length(messages_received) == 1
+                    message = popfirst!(messages_received)
+                    push!(initial_messages_received, message)
+                    break
+                end
+
+            end 
+
+            break # break out of the initialization loop
 
         end
 
@@ -629,7 +652,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     # start new LOB (trading session)
     StartLOB(gateway) 
 
-    # set the seed to ensure reproducibility
+    # set the seed to ensure reproducibility (ensures that chartist MA and Fun prices are the same)
     Random.seed!(seed)
 
     # open the channel that stores all the messages read from the UDP buffer
@@ -640,7 +663,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
 
     # Set the first subject messages
-    simulationstate = SimulationState(LOB, parameters, gateway, true, 0)
+    simulationstate = SimulationState(LOB, parameters, gateway, true, 0, Dates.now())
 
     # open the UDP socket
     receiver = UDPSocket()
@@ -650,6 +673,10 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
     char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀, Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
+    
+    # set the seed to ensure reproducibility
+    Random.seed!(seed)
+    
     fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
 
     # initialize the Subject and subscribe actors to it
@@ -721,16 +748,14 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     # single loop takes about 0.006 seconds (maybe even less)
 
     # get the current time to use for while loop (causes the first HF trade to be a bit before the LF traders but after it seems fine)
-    global start_time = Dates.now()
+    simulationstate.start_time = Dates.now()
 
     #Dates.now() - current_time <= parameters.T
     try
         @time while true
             
             # Sleep the main task for a tiny amount of time to switch to the listening task
-            # println("Task In")
             sleep(0.05)
-            # println("Task Out")
 
             # send the event to be processed by the actors
             if isready(messages_chnl) # if there are messages in the channel then take the last update

@@ -13,7 +13,7 @@ Calibration:
     W = MovingBlockBootstrap(midprice, 500)
     Calibrate(initialsolution)
 =#
-using JLD, CSV, Plots, ProgressMeter, LinearAlgebra
+using JLD, CSV, Plots, ProgressMeter, LinearAlgebra, StatsPlots, StatsBase, Distributions
 import Statistics: cov
 import Random.rand
 import Logging
@@ -52,8 +52,22 @@ function MovingBlockBootstrap(logreturns::Vector{Float64}, iterations::Int64 = 1
         moments = Moments(bootstrapreturns[1:length(logreturns)], logreturns)
         bootstrapmoments[i,:] = [moments.μ moments.σ moments.κ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
     end
+    bootstrapmoments_df = DataFrame(bootstrapmoments, Symbol.(["Mean","Std","Kurtosis","KS","Hurst","GPH","ADF","GARCH","Hill"]))
+    CSV.write("../Data/Calibration/BootstrapMoments.csv", bootstrapmoments_df)
     W = inv(cov(bootstrapmoments))
     save("../Data/Calibration/W.jld", "W", W)
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Moving block bootstrap to estimate covariance matrix of empirical moments on JSE mid-price time-series -----#
+function PlotBoostrapMoments()
+    bootstrapmoments_df = CSV.File(string("../Data/Calibration/BootstrapMoments.csv")) |> DataFrame
+    color = :blue
+    for name in names(bootstrapmoments_df)
+        NormalDistribution = Distributions.fit(Normal, bootstrapmoments_df[:,Symbol(name)])
+        distribution = histogram(bootstrapmoments_df[:,Symbol(name)], normalize = :pdf, fillcolor = color, linecolor = color, xlabel = name, ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+        savefig(distribution, string("../Images/Calibration/" * name * "Distribution.pdf"))
+    end
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -105,17 +119,18 @@ end
 #---------------------------------------------------------------------------------------------------
 
 # make sure these are the same for the stylized facts and sensitivity analysis
-date = DateTime("2019-07-08")
-startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(17)
+# date = DateTime("2019-07-08")
+# startTime = date + Hour(9) + Minute(1)
+# endTime = date + Hour(17)
 
-empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+# empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
 # MovingBlockBootstrap(empiricalLogReturns.MicroPriceLogReturns)
 
-initialsolution = [5, 5, 0.1, 3.5, 5, 0.015]
-@time Calibrate(initialsolution, empiricalLogReturns.MicroPriceLogReturns, empiricalMoments["empericalMicroPriceMoments"])
+# PlotBoostrapMoments()
 
+# initialsolution = [5, 5, 0.1, 3.5, 5, 0.015]
+# @time Calibrate(initialsolution, empiricalLogReturns.MicroPriceLogReturns, empiricalMoments["empericalMicroPriceMoments"])
 
 # stacktrace = load("../Data/Calibration/OptimizationResult.jld")["result"]
 # for s in trace(stacktrace)

@@ -3,16 +3,16 @@ path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MA
 include(path_to_files * "Scripts/ReactiveABM.jl");  include(path_to_files * "Scripts/CoinTossXUtilities.jl") # also includes CoinTossXUtilities.jl
 
 # start CTX, start the JVM and 
-# StartCoinTossX(build = false, deploy = true) # always redeploy to free up memory after last simulation
-# sleep(5)
+StartCoinTossX(build = false, deploy = true) # always redeploy to free up memory after last simulation
+sleep(5)
 
 StartJVM()
 
 gateway = Login(1,1)
 
 # set the parameters
-Nᴸₜ = 9             # [3,6,9,12]
-Nᴸᵥ = 3
+Nᴸₜ = 5             # [3,6,9,12]
+Nᴸᵥ = 9
 Nᴴ = 30             # fixed at 30
 δ = 0.1            # 0.01, 0.07, 0.14, 0.2
 κ = 3.5              # 2, 3, 4, 5
@@ -28,7 +28,7 @@ seed = 1 # 125 has price decrease
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # set the parameters that dictate output
-print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
+print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
 write = true                             # Says whether or not the messages data must be written to a file
 # run the simulation
 try 
@@ -37,5 +37,5 @@ catch e
     @error "Something went wrong" exception=(e, catch_backtrace())
 finally
     Logout(gateway)
-    # StopCoinTossX()
+    StopCoinTossX()
 end
