@@ -14,6 +14,18 @@ import Statistics: mean, quantile, std
 import StatsBase.kurtosis
 import GLM: lm, coef
 using ARCHModels, Polynomials
+import Logging
+Logging.disable_logging(Logging.Warn) # for ties warning in the estimation of the KS statistic
+#---------------------------------------------------------------------------------------------------
+
+#----- Get the upper quantile -----#
+function GetUpperQuantile(x, p)
+    s = sort(x, rev = true)
+    q = quantile(x, p)
+    ind = findfirst(y -> y < q, s)
+    arr = filter(y -> y > 0, s[1:(ind-1)])
+    return arr
+end
 #---------------------------------------------------------------------------------------------------
 
 #----- Moments structure -----#
@@ -38,7 +50,7 @@ struct Moments # Moments of log-returns
         gph = GPH(abs.(logreturns1))
         adf = ADFTest(logreturns1, :none, 0).stat
         garch = sum(coef(ARCHModels.fit(GARCH{1, 1}, logreturns1))[2:3])
-        hill = HillEstimator(logreturns1[findall(x -> (x >= quantile(logreturns1, 0.95)) && (x > 0), logreturns1)], 50)
+        hill = HillEstimator(GetUpperQuantile(logreturns1, 0.95), 50) # findall is a massive inefficiency
         new(μ, σ, κ, ks, hurst, gph, adf, garch, hill)
     end
 end

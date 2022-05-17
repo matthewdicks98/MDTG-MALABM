@@ -131,7 +131,7 @@ mutable struct Parameters
     λmax::Float64 # max of the uniform dist for the forgetting factor of the chartist
     γ::Millisecond # the Time In Force (time the order stays in the order book until manually cancelled by the agent)
     T::Millisecond # Simulation time
-	function Parameters(; Nᴸₜ = 5, Nᴸᵥ = 5, Nᴴ = 30, δ = 0.1 , κ = 3.5, ν = 5, m₀ = 10000, σᵥ = 0.015, λmin = 0.0005, λmax = 0.05, γ = Millisecond(10), T = Millisecond(5000)) # 1000, 25000
+	function Parameters(; Nᴸₜ = 5, Nᴸᵥ = 5, Nᴴ = 30, δ = 0.1 , κ = 3.5, ν = 5, m₀ = 10000, σᵥ = 0.015, λmin = 0.0005, λmax = 0.05, γ = Millisecond(1000), T = Millisecond(25000)) # 1000, 25000
 		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T)
 	end
 end 
@@ -663,7 +663,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
 
     # Set the first subject messages
-    simulationstate = SimulationState(LOB, parameters, gateway, true, 0, Dates.now())
+    simulationstate = SimulationState(LOB, parameters, gateway, true, 1, Dates.now())
 
     # open the UDP socket
     receiver = UDPSocket()
@@ -809,7 +809,10 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         close(receiver)
         # clear LOB and end trading session
         EndLOB(gateway)
+        # print the error
         @error "Something went wrong" exception=(e, catch_backtrace())
+        # return nothing so sensitivity analysis and calibration can stopped
+        return nothing, nothing
     end
     #---------------------------------------------------------------------------------------------------
 
@@ -821,6 +824,11 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # clear LOB and end trading session
     EndLOB(gateway)
+
+    # used to ensure that there is not too much variability in the messages recieved (occured when I kept the semaphore)
+    println()
+    println("Messages Received ", length(messages_received))
+    println()
 
     # Print summary stats and plot test images 
     if print_and_plot

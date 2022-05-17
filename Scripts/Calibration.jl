@@ -97,31 +97,31 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Calibrate with NMTA optimization -----#
-function Calibrate(initialsolution::Vector{Float64}, empiricallogreturns::Vector{Float64}, empiricalmoments::Moments; f_reltol::Vector{Float64} = [0.3, 0.2, 0.1, 0], ta_rounds::Vector{Int64} = [12, 10, 8, 6], neldermeadstate = nothing)
-    # empiricallogreturns = CSV.File("JSE/L1LOB.csv", missingstring = "missing", ignoreemptylines = true, select = [:MicroPrice], skipto = 20000, limit = 20000) |> Tables.matrix |> vec |> y -> filter(z -> !ismissing(z), y) |> x -> diff(log.(x))
-    # empiricalmoments = Moments(empiricallogreturns, empiricallogreturns)
+function Calibrate(initialsolution::Vector{Float64}, empiricallogreturns::Vector{Float64}, empiricalmoments::Moments; f_reltol::Vector{Float64} = [0.3, 0.2, 0.1, 0], ta_rounds::Vector{Int64} = [4, 4, 2, 2], neldermeadstate = nothing)
+    # if nelder mead initial state is not nothing need to do some processing
+    
     StartCoinTossX(build = false); sleep(20); StartJVM(); gateway = Login(1, 1)
     try
         cd(path_to_files * "/Scripts") # change back to path to files
         W = load("../Data/Calibration/W.jld")["W"]
         # counter = Counter(0)                         # !isempty(ta_rounds) ? sum(ta_rounds) : 30, also set replications to 4
-        objective = NonDifferentiable(x -> WeightedSumofSquaredErrors(Parameters(Nᴸₜ = Int(ceil(x[1])), Nᴸᵥ = Int(ceil(x[2])), δ = abs(x[3]), κ = abs(x[4]), ν = abs(x[5]), σᵥ = abs(x[6])), 2, W, empiricalmoments, empiricallogreturns, gateway), initialsolution)
-        optimizationoptions = Options(show_trace = true, store_trace = true, trace_simplex = true, extended_trace = true, iterations = 5, ξ = 0.15, ta_rounds = ta_rounds, f_reltol = f_reltol)
+        objective = NonDifferentiable(x -> WeightedSumofSquaredErrors(Parameters(Nᴸₜ = Int(ceil(x[1])), Nᴸᵥ = Int(ceil(x[2])), δ = abs(x[3]), κ = abs(x[4]), ν = abs(x[5]), σᵥ = abs(x[6]), γ = Millisecond(50), T = Millisecond(500)), 1, W, empiricalmoments, empiricallogreturns, gateway), initialsolution)
+        optimizationoptions = Options(show_trace = true, store_trace = true, trace_simplex = true, extended_trace = true, iterations = 12, ξ = 0.15, ta_rounds = ta_rounds, f_reltol = f_reltol)
         result = !isnothing(neldermeadstate) ? Optimize(objective, initialsolution, optimizationoptions, neldermeadstate) : Optimize(objective, initialsolution, optimizationoptions)
-        save("../Data/Calibration/OptimizationResult.jld", "result", result)
+        save("../Data/Calibration/OptimizationResult3.jld", "result", result)
         Logout(gateway); StopCoinTossX()
     catch e
-        save("../Data/Calibration/OptimizationResult.jld", "result", result)
         Logout(gateway); StopCoinTossX()
+        save("../Data/Calibration/OptimizationResult3.jld", "result", result)
         @error "Something went wrong" exception=(e, catch_backtrace())
     end
 end
 #---------------------------------------------------------------------------------------------------
 
 # make sure these are the same for the stylized facts and sensitivity analysis
-# date = DateTime("2019-07-08")
-# startTime = date + Hour(9) + Minute(1)
-# endTime = date + Hour(17)
+date = DateTime("2019-07-08")
+startTime = date + Hour(9) + Minute(1)
+endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
 
 # empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
@@ -129,19 +129,23 @@ end
 
 # PlotBoostrapMoments()
 
+# initialState = load("../Data/Calibration/OptimizationResult2.jld")["result"]
+# neldermeadstate = initialState.end_state
+# initialsolution = minimizer(initialState)
+
 # initialsolution = [5, 5, 0.1, 3.5, 5, 0.015]
-# @time Calibrate(initialsolution, empiricalLogReturns.MicroPriceLogReturns, empiricalMoments["empericalMicroPriceMoments"])
+# @time Calibrate(initialsolution, empiricalLogReturns.MicroPriceLogReturns, empiricalMoments["empericalMicroPriceMoments"] , neldermeadstate = neldermeadstate)
 
-# stacktrace = load("../Data/Calibration/OptimizationResult.jld")["result"]
-# for s in trace(stacktrace)
-#     println(s)
-# end
+stacktrace = load("../Data/Calibration/OptimizationResult2.jld")["result"]
+for s in trace(stacktrace)
+    println(s)
+end
+println(stacktrace.iterations)
 
-# println(simplex_trace(stacktrace))
+println(initial_state(stacktrace))
+println(minimizer(stacktrace))
+println(optimum(stacktrace))
 
-# println(initial_state(stacktrace))
-# println(minimizer(stacktrace))
-# println(minimizer(load("OptimizationResult.jld")["result"]))
 #----- Validate optimization results -----#
 # stacktrace = load("Data/Calibration/OptimizationResults.jld")["result"]
 # iters = iterations(stacktrace) + 1

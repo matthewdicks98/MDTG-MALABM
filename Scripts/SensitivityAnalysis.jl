@@ -53,11 +53,16 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
     gateway = Login(1, 1)
     open("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv", "w") do file
         println(file, "Type,Nt,Nv,Nh,Delta,Kappa,Nu,M0,SigmaV,LambdaMin,LambdaMax,Gamma,T,Seed,Mean,Std,Kurtosis,KS,Hurst,GPH,ADF,GARCH,Hill")
-        for (i, parameters) in enumerate(parameterCombinations[1:2]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
+        for (i, parameters) in enumerate(parameterCombinations[1:5]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
             try 
-                println("\nParameter Set: $(i)\n")
                 seed = 1
-                midPrices, microPrices = simulate(parameters, gateway, false, false, seed = seed)
+                @time midPrices, microPrices = simulate(parameters, gateway, false, false, seed = seed)
+                if isnothing(midPrices) && isnothing(microPrices)
+                    println("\nParameter Set: $(i-1) finished\n")
+                    break
+                end
+                println("\nParameter Set: $(i)\n")
+                println(run(`free -m`))
                 filter!(x -> !ismissing(x) && !(isnan(x)), midPrices); filter!(x -> !ismissing(x) && !(isnan(x)), microPrices)
                 midPriceLogReturns = diff(log.(midPrices))
                 microPriceLogReturns = diff(log.(microPrices))
@@ -66,6 +71,7 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
                 println(file, "MidPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", simulatedMidPriceMoments.μ, ",", simulatedMidPriceMoments.σ, ",", simulatedMidPriceMoments.κ, ",", simulatedMidPriceMoments.ks, ",", simulatedMidPriceMoments.hurst, ",", simulatedMidPriceMoments.gph, ",", simulatedMidPriceMoments.adf, ",", simulatedMidPriceMoments.garch, ",", simulatedMidPriceMoments.hill)
                 println(file, "MicroPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", simulatedMicroPriceMoments.μ, ",", simulatedMicroPriceMoments.σ, ",", simulatedMicroPriceMoments.κ, ",", simulatedMicroPriceMoments.ks, ",", simulatedMicroPriceMoments.hurst, ",", simulatedMicroPriceMoments.gph, ",", simulatedMicroPriceMoments.adf, ",", simulatedMicroPriceMoments.garch, ",", simulatedMicroPriceMoments.hill)
                 GC.gc()             # perform garbage collection
+                
             catch e
                 println(e)
                 println(file, "MidPrice,", parameters.Nᴸₜ, ",", parameters.Nᴸᵥ, ",", parameters.Nᴴ, ",", parameters.δ, ",", parameters.κ, ",", parameters.ν, ",", parameters.m₀, ",", parameters.σᵥ, ",", parameters.λmin, ",", parameters.λmax, ",", parameters.γ, ",", parameters.T, ",", seed, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN, ",", NaN)
@@ -84,9 +90,9 @@ parameterCombinationsRange = map(x -> parse(Int64, x), ARGS)
 # make sure these are the same for the stylized facts and Calibration
 date = DateTime("2019-07-08")
 startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(17)
+endTime = date + Hour(16) + Minute(50) # Hour(17) ###### Change to 16:50
 
-empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+# empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
 NᴸₜRange = [3,6,9,12]
 NᴸᵥRange = [3,6,9,12]
@@ -97,4 +103,8 @@ NᴸᵥRange = [3,6,9,12]
 
 parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
 
-@time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange)
+for p in parameterCombinations[2499:2501]
+    println(p)
+end
+
+# @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange)

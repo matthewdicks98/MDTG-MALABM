@@ -99,6 +99,7 @@ mutable struct NelderMeadState{Tx <: AbstractArray, T <: Real, Tfs <: AbstractAr
     γ::T
     δ::T
     step_type::String
+    iteration::Int64
 end
 mutable struct OptimizationResults{Tx <: AbstractArray, Tf <: Real}
     initial_x::Tx
@@ -166,7 +167,7 @@ function InitialState(nelder_mead::NelderMead, f::NonDifferentiable, initial_x::
         T(NelderMeadObjective(f_simplex, n, m)), # Store NelderMeadObjective in state.nm_x
         f_simplex[i_order[1]], # Store lowest f in state.f_lowest
         i_order, # Store a vector of rankings of objective values
-        T(α), T(β), T(γ), T(δ), "initial")
+        T(α), T(β), T(γ), T(δ), "initial", 0)
 end
 function ThresholdAccepting!(f::NonDifferentiable, state::NelderMeadState, τ::Float64)
     n, m = length(state.x), state.m
@@ -282,6 +283,18 @@ function PostProcess!(f::NonDifferentiable, state::NelderMeadState)
     f.F = f_min
     state.x .= x_min
 end
+function PostProcessError!(f::NonDifferentiable, state::NelderMeadState) # if an error occurs in the simulation we just want to save state (dont rerun sim might produce another error)
+    # get the current min value of the function
+    f_min, i_f_min = findmin(state.f_simplex)
+
+    # get the minimizer
+    x_min = state.simplex[i_f_min]
+
+    # update the final state
+    f.F = f_min
+    state.x .= x_min
+
+end
 # Convergence
 function AssessConvergence(state::NelderMeadState, options::Options)
     g_converged = state.nm_x <= options.g_abstol # Stopping criterion
@@ -318,7 +331,7 @@ function Trace!(tr::OptimizationTrace, state::NelderMeadState, iteration::Int64,
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Optimization -----#
+#----- Optimization -----# (assumes there will be no errors in the initialization)
 function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{T} = Options(), state::NelderMeadState = InitialState(NelderMead(), f, initial_x)) where {Tx <: AbstractArray, Tf <: Real, T <: Real}
     t₀ = time() # Initial time stamp used to control early stopping by options.time_limit
     tr = OptimizationTrace{Tf}() # Store optimization trace
@@ -326,37 +339,43 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
     tracing = options.store_trace || options.show_trace || options.extended_trace
     stopped, stopped_by_time_limit, f_increased = false, false, false
     g_converged = InitialConvergence(state, initial_x, options) # Converged if criterion is met
-    iteration = 0 # Counter
+    # iteration = 0 # Counter
     if options.show_trace # Print header
         @printf "Iter     Function value    √(Σ(yᵢ-ȳ)²)/n \n"
         @printf "------   --------------    --------------\n"
     end
     t = time()
-    Trace!(tr, state, iteration, options, t - t₀)
-    while !g_converged && !stopped_by_time_limit && iteration < options.iterations
-        iteration += 1
-        println(string(thresholds[iteration], "      ", thresholds[iteration] * sum(state.f_simplex) / state.m))
+    Trace!(tr, state, state.iteration, options, t - t₀)
+
+    while !g_converged && !stopped_by_time_limit && state.iteration < options.iterations
+        state.iteration += 1
+        println(string(thresholds[state.iteration], "      ", thresholds[state.iteration] * sum(state.f_simplex) / state.m))
         if rand() < options.ξ
-            ThresholdAccepting!(f, state, thresholds[iteration] * (sum(state.f_simplex) / state.m))
+            try
+                ThresholdAccepting!(f, state, thresholds[state.iteration] * (sum(state.f_simplex) / state.m))
+            catch e
+                println(e)
+                PostProcessError!(f, state)
+                return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
+            end
         else
-            println()
-            println("######################################## Before")
-            println(state)
-            SimplexSearch!(f, state, thresholds[iteration] * (sum(state.f_simplex) / state.m)) # Percentage of best solution
-            println(state)
-            println("######################################## After")
-            println()
-            sleep(10)
+            try
+                SimplexSearch!(f, state, thresholds[state.iteration] * (sum(state.f_simplex) / state.m)) # Percentage of best solution
+            catch e
+                println(e)
+                PostProcessError!(f, state)
+                return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
+            end
         end
         g_converged, f_increased = AssessConvergence(state, options)
         if tracing
-            Trace!(tr, state, iteration, options, time() - t₀)
+            Trace!(tr, state, state.iteration, options, time() - t₀)
         end
         t = time()
         stopped_by_time_limit = t - t₀ > options.time_limit
     end
     PostProcess!(f, state)
-    return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), iteration, iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
+    return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
 end
 #---------------------------------------------------------------------------------------------------
 

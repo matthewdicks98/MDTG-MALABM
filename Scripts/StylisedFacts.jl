@@ -210,11 +210,11 @@ end
 # make sure these are the same as the ones used in the sensitivity analysis
 date = DateTime("2019-07-08")
 startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(17)
+endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
 
 
-# StylizedFacts("JSE", startTime, endTime)
-# PriceImpact("JSE", startTime, endTime)
-StylizedFacts("CoinTossX", startTime, endTime)
-PriceImpact("CoinTossX", startTime, endTime)
-DepthProfile("CoinTossX")
+StylizedFacts("JSE", startTime, endTime)
+PriceImpact("JSE", startTime, endTime)
+# StylizedFacts("CoinTossX", startTime, endTime)
+# PriceImpact("CoinTossX", startTime, endTime)
+# DepthProfile("CoinTossX")
