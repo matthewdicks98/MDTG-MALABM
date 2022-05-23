@@ -1,6 +1,6 @@
 ENV["JULIA_COPY_STACKS"]=1
-using ProgressMeter, CSV, Plots, DataFrames, StatsPlots, Statistics, ColorSchemes, Dates
-using LinearAlgebra: diag, inv
+using ProgressMeter, CSV, Plots, DataFrames, StatsPlots, Statistics, ColorSchemes, Dates, JLD, Combinatorics, Colors
+using LinearAlgebra: diag, inv, transpose
 
 # set working directory (the path to the Scripts/StylisedFacts.jl file)
 path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/Scripts"
@@ -85,7 +85,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 # collect the comand line arguments
-parameterCombinationsRange = map(x -> parse(Int64, x), ARGS)
+# parameterCombinationsRange = map(x -> parse(Int64, x), ARGS)
 
 # make sure these are the same for the stylized facts and Calibration
 date = DateTime("2019-07-08")
@@ -94,17 +94,140 @@ endTime = date + Hour(16) + Minute(50) # Hour(17) ###### Change to 16:50
 
 # empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
-NᴸₜRange = [3,6,9,12]
-NᴸᵥRange = [3,6,9,12]
-δRange = collect(range(0.01, 0.2, length = 4))
-κRange = collect(range(2, 5, length = 4))
-νRange = collect(range(2, 8, length = 4))
-σᵥRange = collect(range(0.0025, 0.025, length = 4))
+# NᴸₜRange = [3,6,9,12]
+# NᴸᵥRange = [3,6,9,12]
+# δRange = collect(range(0.01, 0.2, length = 4))
+# κRange = collect(range(2, 5, length = 4))
+# νRange = collect(range(2, 8, length = 4))
+# σᵥRange = collect(range(0.0025, 0.025, length = 4))
 
-parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
-
-for p in parameterCombinations[2499:2501]
-    println(p)
-end
+# parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
 
 # @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange)
+
+#----- Visualizations -----#
+
+#----- Compute Objective Function -----#
+function ComputeObjective(empericalMoments::Dict)
+    W = load("../Data/Calibration/W.jld")["W"]
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv")) |> DataFrame
+    objs = Vector{Float64}()
+    for i in 1:nrow(sr)
+        if i % 2 == 0
+            errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMicroPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
+        else
+            errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMidPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
+        end
+        # println(typeof(errors))
+        obj = errors * W * transpose(errors)
+        push!(objs, obj[1])
+    end
+    insertcols!(sr, ncol(sr) + 1, "Objective" => objs)
+    CSV.write("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv", sr)
+end
+
+# ComputeObjective(empericalMoments)
+#---------------------------------------------------------------------------------------------------
+
+#----- Moment Values For Parameter Marginals -----#
+function Winsorize(paramvalues, momentvalues)
+    df = DataFrame(ParamValues = paramvalues, MomentValues = momentvalues)
+    upper = quantile(df.MomentValues, 0.99)
+    lower = quantile(df.MomentValues, 0.01)
+    df_winsor = df[findall(x -> lower < x && x < upper, df.MomentValues),:]
+    return df_winsor.ParamValues, df_winsor.MomentValues
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Moment Values For Parameter Marginals -----#
+function MomentViolinPlots(midmicro::String, winsorize::Bool)
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
+    sr = sr[findall(x -> x == midmicro, sr.Type),:]
+    colors = ["blue", "red", "green", "magenta", "orange", "purple"]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator"), ("Objective", "Objective Function")]
+    for (i, (paramcol, paramlabel)) in enumerate(parameters)
+        col = colors[i]
+        for (momentcol, momentlabel) in moments
+            params_sr = sr[:,paramcol]
+            moments_sr = sr[:,momentcol]
+            if winsorize
+                params_sr, moments_sr = Winsorize(params_sr, moments_sr)
+            end
+            if paramcol == "Delta" || paramcol == "SigmaV"
+                p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
+                xlabel!(paramlabel, fontsize = 5)
+                ylabel!(momentlabel, fontsize = 5)
+                # boxplot!((round.(params_sr, digits = 4)), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false, group = params_sr)
+            else
+                p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
+                xlabel!(paramlabel, fontsize = 5)
+                ylabel!(momentlabel, fontsize = 5)
+                # boxplot!(round.(params_sr, digits = 4), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false)
+            end
+            savefig(p, "../Images/SensitivityAnalysis/Violin/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")
+        end
+    end
+end
+
+# MomentViolinPlots("MicroPrice", true)
+# MomentViolinPlots("MidPrice", true)
+#---------------------------------------------------------------------------------------------------
+
+#----- Moment Surfaces For Parameter Interactions -----#
+function MomentInteractionSurfaces(midmicro::String, winsorize::Bool)
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
+    sr = sr[findall(x -> x == midmicro, sr.Type),:]
+    colors = ["blue", "red", "green", "magenta", "orange", "purple"]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    pairwise_combinations = collect(combinations(parameters, 2))
+    moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator")]
+    for params in pairwise_combinations
+        for (momentcol, momentlabel) in moments
+            sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, Symbol(momentcol) => mean)
+            surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, momentcol * "_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = momentlabel, colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
+            savefig(surface, "../Images/SensitivityAnalysis/MomentInteractionSurfaces/" * midmicro * "Images/" * params[1][1] * params[2][1] * momentcol * ".pdf")
+        end
+    end
+end
+
+# MomentInteractionSurfaces("MicroPrice", false)
+# MomentInteractionSurfaces("MidPrice", false)
+# ---------------------------------------------------------------------------------------------------
+
+#----- Objective Function Surfaces For Parameter Interactions -----#
+function ObjectiveInteractionSurfaces(midmicro::String, winsorize::Bool)
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
+    sr = sr[findall(x -> x == midmicro, sr.Type),:]
+    colors = ["blue", "red", "green", "magenta", "orange", "purple"]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    pairwise_combinations = collect(combinations(parameters, 2))
+    for params in pairwise_combinations
+        sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, :Objective => mean)
+        surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, "Objective_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = "Objective", colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
+        savefig(surface, "../Images/SensitivityAnalysis/ObjectiveInteractionSurfaces/" * midmicro * "Images/" * params[1][1] * params[2][1] * "Objective.pdf")
+    end
+end
+
+# ObjectiveInteractionSurfaces("MicroPrice", false)
+# ObjectiveInteractionSurfaces("MidPrice", false)
+#---------------------------------------------------------------------------------------------------
+
+#----- Correlations Matrix -----#
+function ParameterMomentCorrelationMatrix(midmicro::String, winsorize::Bool)
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
+    sr = sr[findall(x -> x == midmicro, sr.Type),:]
+    variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
+    sr = sr[:,first.(variables)]
+    C = cor(Matrix(sr))
+    (n,m) = size(C)
+    H = heatmap(last.(variables), last.(variables), C, c = cgrad(:seismic, [0, 0.28, 0.56, 1]), xticks = (0.5:1:length(variables), last.(variables)), yticks = (0.5:1:length(variables), last.(variables)), xrotation = 45, yrotation = 0,  yflip=true, tickfontsize = 5, tick_direction = :out, alpha = 0.8)
+    annotate!(H, [(j - 0.5, i - 0.5, text(round(C[i,j],digits=3), 5,:black, :center)) for i in 1:n for j in 1:m])
+    savefig(H, "../Images/SensitivityAnalysis/CorrelationMatrix/CorrelationMatrix" * midmicro * ".pdf")
+end 
+
+# ParameterMomentCorrelationMatrix("MicroPrice", false)
+# ParameterMomentCorrelationMatrix("MidPrice", false)
+#---------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------

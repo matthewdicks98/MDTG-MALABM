@@ -346,7 +346,7 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
     end
     t = time()
     Trace!(tr, state, state.iteration, options, t - t₀)
-
+    start_time = now()
     while !g_converged && !stopped_by_time_limit && state.iteration < options.iterations
         state.iteration += 1
         println(string(thresholds[state.iteration], "      ", thresholds[state.iteration] * sum(state.f_simplex) / state.m))
@@ -355,6 +355,7 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
                 ThresholdAccepting!(f, state, thresholds[state.iteration] * (sum(state.f_simplex) / state.m))
             catch e
                 println(e)
+                @error "Something went wrong" exception=(e, catch_backtrace())
                 PostProcessError!(f, state)
                 return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
             end
@@ -363,6 +364,7 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
                 SimplexSearch!(f, state, thresholds[state.iteration] * (sum(state.f_simplex) / state.m)) # Percentage of best solution
             catch e
                 println(e)
+                @error "Something went wrong" exception=(e, catch_backtrace())
                 PostProcessError!(f, state)
                 return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
             end
@@ -375,6 +377,7 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
         stopped_by_time_limit = t - t₀ > options.time_limit
     end
     PostProcess!(f, state)
+    println("While loop time = ", now() - start_time)
     return OptimizationResults{Tx, Tf}(initial_x, state.x, value(f), state.iteration, state.iteration == options.iterations, options.f_reltol, g_converged, Float64(options.g_abstol), f_increased, tr, options.time_limit, t - t₀, stopped_by_time_limit, state)
 end
 #---------------------------------------------------------------------------------------------------
