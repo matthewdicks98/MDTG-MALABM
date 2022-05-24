@@ -114,11 +114,12 @@ function ComputeObjective(empericalMoments::Dict)
     objs = Vector{Float64}()
     for i in 1:nrow(sr)
         if i % 2 == 0
-            errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMicroPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
+            # errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMicroPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
+            errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
         else
-            errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMidPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
+            # errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMidPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
+            errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
         end
-        # println(typeof(errors))
         obj = errors * W * transpose(errors)
         push!(objs, obj[1])
     end
@@ -165,7 +166,7 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
                 ylabel!(momentlabel, fontsize = 5)
                 # boxplot!(round.(params_sr, digits = 4), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false)
             end
-            savefig(p, "../Images/SensitivityAnalysis/Violin/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")
+            savefig(p, "../Images/SensitivityAnalysis/Violin/NoKurtosis/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")
         end
     end
 end
@@ -205,7 +206,7 @@ function ObjectiveInteractionSurfaces(midmicro::String, winsorize::Bool)
     for params in pairwise_combinations
         sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, :Objective => mean)
         surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, "Objective_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = "Objective", colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
-        savefig(surface, "../Images/SensitivityAnalysis/ObjectiveInteractionSurfaces/" * midmicro * "Images/" * params[1][1] * params[2][1] * "Objective.pdf")
+        savefig(surface, "../Images/SensitivityAnalysis/ObjectiveInteractionSurfaces/NoKurtosis/" * midmicro * "Images/" * params[1][1] * params[2][1] * "Objective.pdf")
     end
 end
 
@@ -217,7 +218,8 @@ end
 function ParameterMomentCorrelationMatrix(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
-    variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
+    # variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
+    variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
     sr = sr[:,first.(variables)]
     C = cor(Matrix(sr))
     (n,m) = size(C)

@@ -350,6 +350,9 @@ function Optimize(f::NonDifferentiable{Tf, Tx}, initial_x::Tx, options::Options{
     while !g_converged && !stopped_by_time_limit && state.iteration < options.iterations
         state.iteration += 1
         println(string(thresholds[state.iteration], "      ", thresholds[state.iteration] * sum(state.f_simplex) / state.m))
+        println(run(`free -m`))
+        println("Iterations = ", state.iteration)
+        sleep(1)
         if rand() < options.ξ
             try
                 ThresholdAccepting!(f, state, thresholds[state.iteration] * (sum(state.f_simplex) / state.m))
