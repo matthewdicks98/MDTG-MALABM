@@ -11,14 +11,14 @@ StartJVM()
 gateway = Login(1,1)
 
 # set the parameters
-Nᴸₜ = 9             # [3,6,9,12]
-Nᴸᵥ = 6
+Nᴸₜ = 13             # [3,6,9,12]
+Nᴸᵥ = 9
 Nᴴ = 30             # fixed at 30
-δ = 0.2            # 0.01, 0.07, 0.14, 0.2
-κ = 3.5              # 2, 3, 4, 5
-ν = 8               # 2, 4, 6, 8
+δ = 0.36            # 0.01, 0.07, 0.14, 0.2
+κ = 17              # 2, 3, 4, 5
+ν = 84               # 2, 4, 6, 8
 m₀ = 10000          # fixed at 10000
-σᵥ = 0.025         # 0.0025, 0.01, 0.0175, 0.025
+σᵥ = 0.35         # 0.0025, 0.01, 0.0175, 0.025
 λmin = 0.0005       # fixed at 0.0005
 λmax = 0.05         # fixed at 0.05
 γ = Millisecond(1000) # fixed at 1000
@@ -29,7 +29,7 @@ parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = 
 
 # set the parameters that dictate output
 print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
-write = true                             # Says whether or not the messages data must be written to a file
+write = false                             # Says whether or not the messages data must be written to a file
 # run the simulation
 try 
     @time simulate(parameters, gateway, print_and_plot, write, seed = seed)

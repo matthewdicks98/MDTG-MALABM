@@ -119,6 +119,21 @@ mutable struct OptimizationResults{Tx <: AbstractArray, Tf <: Real}
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Process Point -----#
+function ProcessPoint(simplexPoint::Vector{Float64}, NᴸₜMax::Int64 = 20, NᴸᵥMax::Int64 = 20, δMax::Float64 = 10.0, σᵥMax::Float64 = 0.05)
+    simplexPoint[1] = min(ceil(abs(simplexPoint[1])),NᴸₜMax)
+    simplexPoint[2] = min(ceil(abs(simplexPoint[2])),NᴸᵥMax)
+    simplexPoint[3] = min(abs(simplexPoint[3]),δMax)
+    simplexPoint[4] = abs(simplexPoint[4])
+    simplexPoint[5] = max(abs(simplexPoint[5]),1.5) # make sure ν is always greater than 1
+    simplexPoint[end] = min(abs(simplexPoint[end]),σᵥMax)
+    if simplexPoint[4] == 0.0 # ensure κ != 0
+        simplexPoint[4] = 0.001
+    end
+    return simplexPoint
+end
+#---------------------------------------------------------------------------------------------------
+
 #----- Nelder-Mead -----#
 NelderMeadObjective(y::Vector, m::Integer, n::Integer) = sqrt(var(y) * (m / n))
 function simplexer(S::AffineSimplexer, initial_x::Tx) where Tx <: AbstractArray
@@ -145,7 +160,7 @@ function InitialState(nelder_mead::NelderMead, f::NonDifferentiable, initial_x::
     T = eltype(initial_x)
     n = length(initial_x)
     m = n + 1
-    simplex = simplexer(nelder_mead.initial_simplex, initial_x)
+    simplex = [ProcessPoint(p) for p in simplexer(nelder_mead.initial_simplex, initial_x)]
     f_simplex = zeros(T, m)
     value!!(f, first(simplex))
     f_simplex[1] = value(f)
@@ -174,7 +189,7 @@ function ThresholdAccepting!(f::NonDifferentiable, state::NelderMeadState, τ::F
     paramindex = rand(1:n)
     perturbation = zeros(Float64, n)
     perturbation[paramindex] = rand(Normal(0, abs(sum(getindex.(state.simplex, paramindex)) / 2m)))
-    @. state.x_cache = state.simplex[state.i_order[1]] + perturbation
+    state.x_cache = ProcessPoint(state.simplex[state.i_order[1]] .+ perturbation)
     f_perturb = value(f, state.x_cache)
     if f_perturb < state.f_simplex[state.i_order[1]] + τ # Only accept if perturbation is now better than the best + some threshold
         # Update state
@@ -195,11 +210,11 @@ function SimplexSearch!(f::NonDifferentiable, state::NelderMeadState, τ::Float6
     f_second_highest = state.f_simplex[state.i_order[n]]
     f_highest = state.f_simplex[state.i_order[m]]
     # Compute a reflection
-    @. state.x_reflect = state.x_centroid + state.α * (state.x_centroid - state.x_highest)
+    state.x_reflect = ProcessPoint(state.x_centroid .+ state.α .* (state.x_centroid .- state.x_highest))
     f_reflect = value(f, state.x_reflect)
     if f_reflect < state.f_lowest + τ # Reflection has improved the objective
         # Compute an expansion
-        @. state.x_cache = state.x_centroid + state.β * (state.x_reflect - state.x_centroid)
+        state.x_cache = ProcessPoint(state.x_centroid .+ state.β .* (state.x_reflect .- state.x_centroid))
         f_expand = value(f, state.x_cache)
         if f_expand < f_reflect + τ # Expansion has improved the objective
             # Update state
@@ -229,7 +244,7 @@ function SimplexSearch!(f::NonDifferentiable, state::NelderMeadState, τ::Float6
     else
         if f_reflect < f_highest + τ # Reflection is better than the worst but mot better than the second worst
             # Outside contraction
-            @. state.x_cache = state.x_centroid + state.γ * (state.x_reflect - state.x_centroid)
+            state.x_cache = ProcessPoint(state.x_centroid .+ state.γ .* (state.x_reflect .- state.x_centroid))
             f_outside_contraction = value(f, state.x_cache)
             if f_outside_contraction < f_reflect + τ
                 # Update state
@@ -243,7 +258,7 @@ function SimplexSearch!(f::NonDifferentiable, state::NelderMeadState, τ::Float6
             end
         else # f_reflect > f_highest - new worst
             # Inside constraction
-            @. state.x_cache = state.x_centroid - state.γ *(state.x_reflect - state.x_centroid)
+            state.x_cache = ProcessPoint(state.x_centroid .- state.γ .* (state.x_reflect .- state.x_centroid))
             f_inside_contraction = value(f, state.x_cache)
             if f_inside_contraction < f_highest + τ
                 # Update state
@@ -261,7 +276,7 @@ function SimplexSearch!(f::NonDifferentiable, state::NelderMeadState, τ::Float6
         for i = 2:m
             ord = state.i_order[i]
             # Update state
-            copyto!(state.simplex[ord], state.x_lowest + state.δ*(state.simplex[ord]-state.x_lowest))
+            copyto!(state.simplex[ord], ProcessPoint(state.x_lowest .+ state.δ*(state.simplex[ord] .- state.x_lowest)))
             state.f_simplex[ord] = value(f, state.simplex[ord])
         end
         state.step_type = "shrink"
@@ -272,7 +287,7 @@ function SimplexSearch!(f::NonDifferentiable, state::NelderMeadState, τ::Float6
 end
 function PostProcess!(f::NonDifferentiable, state::NelderMeadState)
     sortperm!(state.i_order, state.f_simplex)
-    x_centroid_min = centroid(state.simplex, state.i_order[state.m])
+    x_centroid_min = ProcessPoint(centroid(state.simplex, state.i_order[state.m]))
     f_centroid_min = value(f, x_centroid_min)
     f_min, i_f_min = findmin(state.f_simplex)
     x_min = state.simplex[i_f_min]
