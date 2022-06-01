@@ -213,8 +213,8 @@ startTime = date + Hour(9) + Minute(1)
 endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
 
 
-StylizedFacts("JSE", startTime, endTime)
-PriceImpact("JSE", startTime, endTime)
-# StylizedFacts("CoinTossX", startTime, endTime)
-# PriceImpact("CoinTossX", startTime, endTime)
-# DepthProfile("CoinTossX")
+# StylizedFacts("JSE", startTime, endTime)
+# PriceImpact("JSE", startTime, endTime)
+StylizedFacts("CoinTossX", startTime, endTime)
+PriceImpact("CoinTossX", startTime, endTime)
+DepthProfile("CoinTossX")

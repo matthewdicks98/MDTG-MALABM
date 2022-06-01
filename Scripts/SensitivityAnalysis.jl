@@ -232,4 +232,22 @@ end
 # ParameterMomentCorrelationMatrix("MidPrice", false)
 #---------------------------------------------------------------------------------------------------
 
+#----- Exposure Matrix -----#
+function ExposureMatrix(midmicro::String)
+    sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
+    sr = sr[findall(x -> x == midmicro, sr.Type),:]
+    moments = [("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill")]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    B = fill(0.0, length(parameters), length(moments))
+    for (i, param) in enumerate(parameters)
+        for (j, moment) in enumerate(moments)
+            B[i,j] = cov(sr[:,first(param)], sr[:,first(moment)]) / var(sr[:,first(moment)])
+        end
+    end
+    save("../Data/SensitivityAnalysis/B.jld", "B", B)
+end
+
+# ExposureMatrix("MicroPrice")
+#---------------------------------------------------------------------------------------------------
+
 #---------------------------------------------------------------------------------------------------
