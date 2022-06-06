@@ -14,7 +14,7 @@ function Listen(receiver, messages_chnl, messages_received)
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
+            # println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
         end
     catch e
         if e isa EOFError
@@ -29,7 +29,7 @@ end
 
 #----- Summary Stuff Used For Testing -----# 
 
-function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received)
+function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
     println("Messages received: " * string(length(messages_received)))
 
     println("Number of asks: " * string(length(LOB.asks)))
@@ -105,6 +105,22 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
         plot!(chartist_ma[i], label = "MA"*string(i) * "(" * string(round(char_traders_vec[i].λ, digits = 4)) * ")")
     end
 
+    p8 = histogram(spreads, fillcolor = :green, linecolor = :green, xlabel = "Spread", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+
+    p9 = histogram(bid_volumes, fillcolor = :green, linecolor = :green, xlabel = "Total Bid Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+
+    p10 = histogram(ask_volumes, fillcolor = :green, linecolor = :green, xlabel = "Total Ask Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+
+    p11 = histogram(best_bid_volumes, fillcolor = :green, linecolor = :green, xlabel = "Best bid Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+
+    p12 = histogram(best_ask_volumes, fillcolor = :green, linecolor = :green, xlabel = "Best Ask Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
+
+    println("best bids ", length(findall(x -> x <= mean(best_bid_volumes), best_bid_volumes)), " total length ", length(best_bid_volumes))
+    println("best asks ", length(findall(x -> x <= mean(best_ask_volumes), best_ask_volumes)), " total length ", length(best_ask_volumes))
+
+    println("mean best bid = ", mean(best_bid_volumes))
+    println("mean best ask = ", mean(best_ask_volumes))
+
     # save plots to vis them 
     Plots.savefig(p1, path_to_files * "TestImages/prices_with_fun_char.pdf")
     Plots.savefig(p2, path_to_files * "TestImages/spread.pdf")
@@ -113,6 +129,11 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     Plots.savefig(p5, path_to_files * "TestImages/volumes.pdf")
     Plots.savefig(p6, path_to_files * "TestImages/all.pdf")
     Plots.savefig(p7, path_to_files * "TestImages/prices_MAs.pdf")
+    Plots.savefig(p8, path_to_files * "TestImages/spread_dist.pdf")
+    Plots.savefig(p9, path_to_files * "TestImages/total_bid_volume.pdf")
+    Plots.savefig(p10, path_to_files * "TestImages/total_ask_volume.pdf")
+    Plots.savefig(p11, path_to_files * "TestImages/best_bid_volume.pdf")
+    Plots.savefig(p12, path_to_files * "TestImages/best_ask_volume.pdf")
 end
 
 #---------------------------------------------------------------------------------------------------
@@ -706,6 +727,8 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         imbalances = Array{Float64, 1}()
         ask_volumes = Array{Float64, 1}()
         bid_volumes = Array{Float64, 1}()
+        best_ask_volumes = Array{Float64, 1}()
+        best_bid_volumes = Array{Float64, 1}()
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
@@ -738,6 +761,10 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         if length(simulationstate.LOB.bids) > 0
             push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
         end
+
+        push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
+        push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
+
     end
 
     # println("\n#################################################################### Initialization Done\n")
@@ -786,9 +813,11 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
                         push!(imbalances, simulationstate.LOB.ρₜ)
                         if length(simulationstate.LOB.asks) > 0
                             push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
+                            push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
                         end
                         if length(simulationstate.LOB.bids) > 0
                             push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
+                            push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
                         end
                     end
 
@@ -832,7 +861,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # Print summary stats and plot test images 
     if print_and_plot
-        SummaryAndTestImages(messages_chnl, simulationstate.LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received)
+        SummaryAndTestImages(messages_chnl, simulationstate.LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
     end
 
     # write all the orders received after initialization to a file 

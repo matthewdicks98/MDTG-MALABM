@@ -40,8 +40,22 @@ function GenerateEmpericalReturnsAndMoments(startTime::DateTime, endTime::DateTi
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Generate simuklated log-returns and emperical moments -----#
+function GenerateSimulatedReturnsAndMoments(empiricalMidPriceLogReturns::Vector{Float64}, empiricalMicroPriceLogReturns::Vector{Float64})
+    println("Generating returns and moments for simulated data")
+    empericalData = CSV.File(string("../Data/CoinTossX/L1LOB.csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+    filter!(x -> !ismissing(x.MidPrice), empericalData); filter!(x -> !ismissing(x.MicroPrice), empericalData)
+    midPriceLogReturns = diff(log.(empericalData.MidPrice))
+    microPriceLogReturns = diff(log.(empericalData.MicroPrice))
+    simulatedLogReturns = DataFrame(MidPriceLogReturns = midPriceLogReturns, MicroPriceLogReturns = microPriceLogReturns)
+    simulatedMidPriceMoments = Moments(midPriceLogReturns, empiricalMidPriceLogReturns)
+    simulatedMicroPriceMoments = Moments(microPriceLogReturns, empiricalMicroPriceLogReturns)
+    simulatedMoments = Dict("simulatedMidPriceMoments" => simulatedMidPriceMoments, "simulatedMicroPriceMoments" => simulatedMicroPriceMoments)
+    return simulatedLogReturns, simulatedMoments
+end
+#---------------------------------------------------------------------------------------------------
 
-#----- Moving block bootstrap to estimate covariance matrix of empirical moments on JSE mid-price time-series -----#
+#----- Moving block bootstrap to estimate covariance matrix of empirical moments on JSE time-series -----#
 function MovingBlockBootstrap(logreturns::Vector{Float64}, iterations::Int64 = 1000, windowsize::Int64 = 2000)
     bootstrapmoments = fill(0.0, (iterations, 8))
     @showprogress "Computing weight matrix..." for i in 1:iterations
@@ -58,6 +72,26 @@ function MovingBlockBootstrap(logreturns::Vector{Float64}, iterations::Int64 = 1
     CSV.write("../Data/Calibration/BootstrapMoments.csv", bootstrapmoments_df)
     W = inv(cov(bootstrapmoments))
     save("../Data/Calibration/W.jld", "W", W)
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Moving block bootstrap to estimate covariance matrix of simulated moments on CoinTossX time-series -----#
+function MovingBlockBootstrapSimulated(logreturns::Vector{Float64}, empiricallogreturns::Vector{Float64}, iterations::Int64 = 1000, windowsize::Int64 = 2000)
+    bootstrapmoments = fill(0.0, (iterations, 8))
+    @showprogress "Computing weight matrix..." for i in 1:iterations
+        indeces = rand(1:(length(logreturns) - windowsize + 1), Int(ceil(length(logreturns)/windowsize)))
+        bootstrapreturns = Vector{Float64}()
+        for index in indeces
+            append!(bootstrapreturns, logreturns[index:(index  + windowsize - 1)])
+        end
+        moments = Moments(bootstrapreturns[1:length(logreturns)], empiricallogreturns)
+        # bootstrapmoments[i,:] = [moments.μ moments.σ moments.κ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
+        bootstrapmoments[i,:] = [moments.μ moments.σ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
+    end
+    bootstrapmoments_df = DataFrame(bootstrapmoments, Symbol.(["Mean","Std","KS","Hurst","GPH","ADF","GARCH","Hill"]))
+    CSV.write("../Data/Calibration/SimulatedBootstrapMoments.csv", bootstrapmoments_df)
+    W = inv(cov(bootstrapmoments))
+    save("../Data/Calibration/SimulatedW.jld", "SimulatedW", W)
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -126,8 +160,11 @@ startTime = date + Hour(9) + Minute(1)
 endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
 
 # empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+# simulatedLogReturns, simulatedMoments = GenerateSimulatedReturnsAndMoments(empiricalLogReturns.MidPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
 
 # MovingBlockBootstrap(empiricalLogReturns.MicroPriceLogReturns)
+
+# MovingBlockBootstrapSimulated(simulatedLogReturns.MicroPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
 
 # PlotBoostrapMoments()
 
@@ -197,9 +234,9 @@ function ParameterConfidenceIntervals(calibratedParams::Vector{Float64})
     sigmas = sqrt.(diag(B * inv(W) * transpose(B)))
     upper = calibratedParams .+ (1.96 .* sigmas)
     lower = calibratedParams .- (1.96 .* sigmas)
-    println(upper)
-    println(calibratedParams)
-    println(lower)
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    df = DataFrame(Parameters = first.(parameters), CalibratedParameters = calibratedParams, Lower = lower, Upper = upper)
+    CSV.write("../Data/Calibration/parameters.csv", df)
 end
 
 # ParameterConfidenceIntervals([8, 6, 0.125, 3.389, 7.221, 0.041])
@@ -227,4 +264,36 @@ end
 
 # stacktrace = load("../Data/Calibration/OptimizationResult.jld")["result"]
 # ParameterTracePlots(stacktrace)
+#---------------------------------------------------------------------------------------------------
+
+#----- Moment Confidence Intervals -----# (need to do if you get another days data)
+function MomentConfidenceIntervals(startTime::DateTime, endTime::DateTime)
+    W = load("../Data/Calibration/W.jld")["W"]
+
+    # Emperical Moments and confidence intervals using inv(W) (emperical covariance matrix)
+    empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+    sigmas = sqrt.(diag(inv(W)))
+    empirical = [empiricalMoments["empericalMicroPriceMoments"].μ, empiricalMoments["empericalMicroPriceMoments"].σ, empiricalMoments["empericalMicroPriceMoments"].ks, empiricalMoments["empericalMicroPriceMoments"].hurst, empiricalMoments["empericalMicroPriceMoments"].gph, empiricalMoments["empericalMicroPriceMoments"].adf, empiricalMoments["empericalMicroPriceMoments"].garch, empiricalMoments["empericalMicroPriceMoments"].hill]
+    empiricalLower = empirical .- (1.96 .* sigmas)
+    empiricalUpper = empirical .+ (1.96 .* sigmas)
+
+    # Simulated moments and confidence intervals using simulated variance covariance matrix
+    SimulatedW = load("../Data/Calibration/SimulatedW.jld")["SimulatedW"]
+    simulatedLogReturns, simulatedMoments = GenerateSimulatedReturnsAndMoments(empiricalLogReturns.MidPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
+    sigmas = sqrt.(diag(inv(SimulatedW)))
+    simulated = [simulatedMoments["simulatedMicroPriceMoments"].μ, simulatedMoments["simulatedMicroPriceMoments"].σ, simulatedMoments["simulatedMicroPriceMoments"].ks, simulatedMoments["simulatedMicroPriceMoments"].hurst, simulatedMoments["simulatedMicroPriceMoments"].gph, simulatedMoments["simulatedMicroPriceMoments"].adf, simulatedMoments["simulatedMicroPriceMoments"].garch, simulatedMoments["simulatedMicroPriceMoments"].hill]
+    simulatedLower = simulated .- (1.96 .* sigmas)
+    simulatedUpper = simulated .+ (1.96 .* sigmas)
+
+    # write to file
+    moments = ["Mean", "Std", "KS", "Hurst", "GPH", "ADF", "GARCH", "Hill"]
+    df = DataFrame(Moments = moments, Empirical = empirical, EmpiricalLower = empiricalLower, EmpiricalUpper = empiricalUpper, Simulated = simulated, SimulatedLower = simulatedLower, SimulatedUpper = simulatedUpper)
+    CSV.write("../Data/Calibration/moments.csv", df)
+end
+
+# make sure these are the same for the stylized facts and sensitivity analysis
+date = DateTime("2019-07-08")
+startTime = date + Hour(9) + Minute(1)
+endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
+MomentConfidenceIntervals(startTime, endTime)
 #---------------------------------------------------------------------------------------------------
