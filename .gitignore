@@ -24,7 +24,19 @@ docs/site/
 Manifest.toml
 
 # Test Images
-TestImages/*.pdf
+TestImages/
+
+# Images
+Images/CoinTossX/
+Images/JSE/
+Images/SensitivityAnalysis/
+Images/Calibration/
 
 # Data files
-Data/*.csv
+Data/CoinTossX/
+Data/JSE/
+Data/SensitivityAnalysis
+Data/Calibration/
+
+# bash scripts
+BashScripts/

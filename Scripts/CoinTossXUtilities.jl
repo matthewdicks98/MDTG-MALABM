@@ -14,8 +14,8 @@ CoinTossXUtilities:
     8. Receive updates to the best bid/ask
     9. Shutdown all components of CoinTossX
 =#
-using JavaCall
 ENV["JULIA_COPY_STACKS"]=1
+using JavaCall
 ctx_directory = "/home/matt/IdeaProjects"
 software_path = "/home/matt/IdeaProjects/CoinTossXIvan_Run"
 #---------------------------------------------------------------------------------------------------
@@ -62,8 +62,10 @@ end
 function StartJVM()
     JavaCall.addClassPath(ctx_directory * "/CoinTossXIvan/ClientSimulator/build/classes/main")
     JavaCall.addClassPath(ctx_directory * "/CoinTossXIvan/ClientSimulator/build/install/ClientSimulator/lib/*.jar")
-    JavaCall.init()
-    #JavaCall.init(["-Xmx2G", "-Xms2G", "-d64", "-server", "-XX:+UseStringDeduplication", "-Dagrona.disable.bounds.checks=true", "-XX:+UseG1GC", "-XX:+UseLargePages", "-XX:+OptimizeStringConcat", "-XX:+UseCondCardMark"])
+    # JavaCall.init()
+    # "-XX:+UseLargePages",
+    # "-server",
+    JavaCall.init(["-Xmx2G", "-Xms2G", "-d64", "-XX:+UseStringDeduplication", "-Dagrona.disable.bounds.checks=true", "-XX:+UseG1GC", "-XX:+OptimizeStringConcat", "-XX:+UseCondCardMark"])
     println("--------------------------------JVM has started--------------------------------")
 end
 #---------------------------------------------------------------------------------------------------
