@@ -145,7 +145,7 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator"), ("Objective", "Objective Function")]
     for (i, (paramcol, paramlabel)) in enumerate(parameters)
         col = colors[i]
@@ -180,7 +180,7 @@ function MomentInteractionSurfaces(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     pairwise_combinations = collect(combinations(parameters, 2))
     moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator")]
     for params in pairwise_combinations
@@ -201,7 +201,7 @@ function ObjectiveInteractionSurfaces(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     pairwise_combinations = collect(combinations(parameters, 2))
     for params in pairwise_combinations
         sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, :Objective => mean)
@@ -219,7 +219,7 @@ function ParameterMomentCorrelationMatrix(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     # variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
-    variables = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
+    variables = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
     sr = sr[:,first.(variables)]
     C = cor(Matrix(sr))
     (n,m) = size(C)
@@ -237,7 +237,7 @@ function ExposureMatrix(midmicro::String)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     moments = [("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill")]
-    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     B = fill(0.0, length(parameters), length(moments))
     for (i, param) in enumerate(parameters)
         for (j, moment) in enumerate(moments)

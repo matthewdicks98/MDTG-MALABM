@@ -43,10 +43,10 @@ end
 #----- Generate simuklated log-returns and emperical moments -----#
 function GenerateSimulatedReturnsAndMoments(empiricalMidPriceLogReturns::Vector{Float64}, empiricalMicroPriceLogReturns::Vector{Float64})
     println("Generating returns and moments for simulated data")
-    empericalData = CSV.File(string("../Data/CoinTossX/L1LOB.csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
-    filter!(x -> !ismissing(x.MidPrice), empericalData); filter!(x -> !ismissing(x.MicroPrice), empericalData)
-    midPriceLogReturns = diff(log.(empericalData.MidPrice))
-    microPriceLogReturns = diff(log.(empericalData.MicroPrice))
+    simData = CSV.File(string("../Data/CoinTossX/L1LOB.csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+    filter!(x -> !ismissing(x.MidPrice), empericalData); filter!(x -> !ismissing(x.MicroPrice), simData)
+    midPriceLogReturns = diff(log.(simData.MidPrice))
+    microPriceLogReturns = diff(log.(simData.MicroPrice))
     simulatedLogReturns = DataFrame(MidPriceLogReturns = midPriceLogReturns, MicroPriceLogReturns = microPriceLogReturns)
     simulatedMidPriceMoments = Moments(midPriceLogReturns, empiricalMidPriceLogReturns)
     simulatedMicroPriceMoments = Moments(microPriceLogReturns, empiricalMicroPriceLogReturns)
@@ -203,21 +203,6 @@ initialsolution = [5, 5, 0.1, 3.5, 5, 0.015]
 #     global j += 1
 # end
 
-# println(f)
-# println(f_simplex)
-# for s in trace(stacktrace1)
-#     if i == iterations(stacktrace) + 2
-#         global i += 1
-#         continue
-#     else
-#         f[j] = s.value                         # vertex with the lowest value (lowest with a tolerence in the begining)
-#         g_norm[j] = s.g_norm                   # √(Σ(yᵢ-ȳ)²)/n 
-#         f_simplex[j, :] = transpose(s.metadata["simplex_values"])
-#         global i += 1
-#         global j += 1
-#     end
-# end
-
 # # Objectives
 # objectives = plot(1:iters, f, seriestype = :line, linecolor = :blue, label = "Weighted SSE objective", xlabel = "Iteration", ylabel = "Weighted SSE objective", legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, xaxis = false, xticks = false, legend = :bottomleft, guidefontsize = 7, yscale = :log10, minorticks = true, left_margin = 5Plots.mm, right_margin = 15Plots.mm)
 # plot!(twinx(), 1:iters, g_norm, seriestype = :line, linecolor = :purple, label = "Convergence criterion", ylabel = "Convergence criterion", legend = :topright, legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, yscale = :log10, minorticks = true, guidefontsize = 7)
@@ -234,7 +219,7 @@ function ParameterConfidenceIntervals(calibratedParams::Vector{Float64})
     sigmas = sqrt.(diag(B * inv(W) * transpose(B)))
     upper = calibratedParams .+ (1.96 .* sigmas)
     lower = calibratedParams .- (1.96 .* sigmas)
-    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     df = DataFrame(Parameters = first.(parameters), CalibratedParameters = calibratedParams, Lower = lower, Upper = upper)
     CSV.write("../Data/Calibration/parameters.csv", df)
 end
@@ -248,7 +233,7 @@ function ParameterTracePlots(stacktrace)
     meanTrace = fill(0.0, iters, 6)
     upperTrace = fill(0.0, iters, 6)
     lowerTrace = fill(0.0, iters, 6)
-    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ")]
+    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
     c = [:blue :purple :green :orange :red :black :magenta]
     for (i,param) in enumerate(parameters)
         t = fill(0.0, iters, 7)
@@ -257,7 +242,7 @@ function ParameterTracePlots(stacktrace)
         end
         p = plot(1:iters, t, seriestype = :line, linestyle = :dash, linecolor = c[i], xlabel = "Iteration", ylabel = last(param), legend = false, tickfontsize = 5, guidefontsize = 7, minorticks = true)
         plot!(1:iters, transpose(hcat(centroid_trace(stacktrace)...))[:,i], seriestype = :line, linestyle = :solid, linecolor = c[i], linewidth = 2, legend = false)
-        savefig(p, "../Images/Calibration/ParameterConvergence/ParameterConvergence" * last(param) * ".pdf")
+        savefig(p, "../Images/Calibration/ParameterConvergence/ParameterConvergence" * first(param) * ".pdf")
     end
 
 end

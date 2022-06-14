@@ -24,6 +24,7 @@ import Statistics.var
 # set working directory (the path to the Scripts/StylisedFacts.jl file)
 path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/Scripts"
 cd(path_to_folder)
+include("Moments.jl")
 
 #----- Generate stylized facts -----#
 function StylizedFacts(exchange::String, startTime::DateTime, endTime::DateTime; format::String = "pdf")
@@ -81,7 +82,7 @@ end
 #----- Log return sample distributions for different time resolutions -----#
 function LogReturnDistribution(exchange::String, logreturns::Vector{Float64}; format::String = "pdf")
     color = exchange == "CoinTossX" ? :green : (exchange == "JSE" ? :purple : :orange)
-    NormalDistribution = fit(Normal, logreturns)
+    NormalDistribution = Distributions.fit(Normal, logreturns)
     distribution = histogram(logreturns, normalize = :pdf, fillcolor = color, linecolor = color, xlabel = "Log returns", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent, ylim = (0, 3000), xlim = (-0.012, 0.01))
     plot!(distribution, NormalDistribution, line = (:black, 2), label = "Fitted Normal")
     qqplot!(distribution, Normal, logreturns, xlabel = "Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.15, 0.03, 0.4, 0.4)), subplot = 2, title = "Normal QQ-plot", titlefontsize = 7)
@@ -108,6 +109,19 @@ function TradeSignAutocorrelation(exchange::String, data::DataFrame, lag::Int64;
     tradeSigns = data[findall(x -> x == :Market, data.Type), :Side]
     lag = length(tradeSigns) - 1
     autoCorr = autocor(tradeSigns, 1:lag; demean = false)
+
+    # plot the positive autocorrelations on a log-log scale and estimate the tail index\
+    if exchange == "JSE"
+        xₘᵢₙ = minimum(autoCorr[findall(x -> x > 0, autoCorr)])
+        α = 1 + length(autoCorr[findall(x -> x > 0, autoCorr)]) / sum(log.(autoCorr[findall(x -> x > 0, autoCorr)] ./ xₘᵢₙ))
+        println()
+        println(string(exchange, " tail-index estimate"))
+        println(α)
+        println()
+        p = plot(autoCorr[findall(x -> x > 0, autoCorr)], xscale = :log10, yscale = :log10, legend = false, xlabel = "Lag", ylabel = "Autocorrelation", linecolor = color, title = "Log-Log-scale order-flow autocorrelation")
+        savefig(p, string("../Images/" * exchange * "/Trade-SignAutocorrelationlog-log.", format))
+    end
+
     autoCorrPlot = plot(autoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = false, xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8))
     plot!(autoCorrPlot, [quantile(Normal(), (1 + 0.95) / 2) / sqrt(length(tradeSigns)), quantile(Normal(), (1 - 0.95) / 2) / sqrt(length(tradeSigns))], seriestype = :hline, line = (:dash, :black, 2))
     plot!(autoCorrPlot, autoCorr, xscale = :log10, inset = (1, bbox(0.58, 0.1, 0.4, 0.4)), subplot = 2, legend = false, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7) #  ", L"(\log_{10})
@@ -153,7 +167,7 @@ function DepthProfile(exchange::String; format::String = "pdf")
     profile = CSV.File(string("../Data/" * exchange * "/DepthProfileData.csv"), header = false) |> DataFrame |> Matrix{Union{Missing, Int64}}
     μ = map(i -> mean(skipmissing(profile[:, i])), 1:size(profile, 2))
     depthProfile = plot(-(1:7), μ[1:7], seriestype = [:scatter, :line], marker = (:blue, stroke(:blue), :utriangle), linecolor = :blue, label = ["" "Bid profile"], xlabel = "Price level of limit orders (<0: bids; >0: asks)", ylabel = "Volume", legend = :topleft, fg_legend = :transparent, right_margin = 15mm)#, yscale = :log10
-    plot!(twinx(), 1:7, μ[8:14], seriestype = [:scatter, :line], marker = (:red, stroke(:red), :dtriangle), linecolor = :red, label = ["" "Ask profile"], legend = :topright)
+    plot!(twinx(), 1:7, μ[8:14], seriestype = [:scatter, :line], marker = (:red, stroke(:red), :dtriangle), linecolor = :red, label = ["" "Ask profile"], legend = :topright, fg_legend = :transparent)
     savefig(depthProfile, string("../Images/" * exchange * "/DepthProfile.", format))
     println("Depth profile visualization complete")
 end
@@ -201,7 +215,7 @@ function PriceImpact(exchange::String, startTime::DateTime, endTime::DateTime; f
         end
     end
     indeces = findall(vec(any(x -> !isnan(x), Δp, dims = 2) .* any(x -> !isnan(x), ω, dims = 2)))
-    priceImpact = plot(ω[2:(end-3), :], Δp[2:(end-3), :], scale = :log10, seriestype = [:scatter, :line], markershape = [:utriangle :dtriangle], markercolor = [:blue :red], markerstrokecolor = [:blue :red], markersize = 3, linecolor = [:blue :red], xlabel = "ω*", ylabel = "Δp*", label = ["" "" "Buyer initiated" "Seller initiated"], legend = :topleft, fg_legend = :transparent)
+    priceImpact = plot(ω[2:(end-3), :], Δp[2:(end-3), :], scale = :log10, seriestype = [:scatter, :line], markershape = [:utriangle :dtriangle], markercolor = [:blue :red], markerstrokecolor = [:blue :red], markersize = 3, linecolor = [:blue :red], xlabel = "ω*", ylabel = "Δp*", label = ["" "" "Buyer initiated" "Seller initiated"], legend = :topleft, fg_legend = :transparent, title = exchange)
     savefig(priceImpact, string("../Images/" * exchange * "/PriceImpact.", format))
     println("Price impact complete")
 end
@@ -213,8 +227,8 @@ startTime = date + Hour(9) + Minute(1)
 endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
 
 
-# StylizedFacts("JSE", startTime, endTime)
+StylizedFacts("JSE", startTime, endTime)
 # PriceImpact("JSE", startTime, endTime)
 StylizedFacts("CoinTossX", startTime, endTime)
-PriceImpact("CoinTossX", startTime, endTime)
-DepthProfile("CoinTossX")
+# PriceImpact("CoinTossX", startTime, endTime)
+# DepthProfile("CoinTossX")
