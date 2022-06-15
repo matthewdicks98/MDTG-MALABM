@@ -111,7 +111,7 @@ end
 function WeightedSumofSquaredErrors(parameters::Parameters, replications::Int64, W::Array{Float64, 2}, empiricalmoments::Moments, empiricallogreturns::Vector{Float64}, gateway::TradingGateway)
     errormatrix = fill(0.0, (replications, 8))
     for i in 1:replications
-        midprice, microprice = simulate(parameters, gateway, false, false, seed = i)
+        midprice, microprice = simulate(parameters, gateway, false, false, false, seed = i)
         if !isempty(microprice)
             filter!(x -> !isnan(x), microprice)
             logreturns = diff(log.(microprice))

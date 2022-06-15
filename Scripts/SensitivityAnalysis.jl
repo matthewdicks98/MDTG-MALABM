@@ -46,7 +46,7 @@ function GenerateParameterCombinations(NᴸₜRange::Vector{Int64}, NᴸᵥRange
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Sensitivity analysis -----#
+#----- Sensitivity analysis -----# (ensure CoinTossX has started)
 function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::Dict, parameterCombinations::Vector{Parameters}, parameterCombinationsRange::Vector{Int64})
     # StartCoinTossX(false, false)
     StartJVM()
@@ -56,7 +56,7 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
         for (i, parameters) in enumerate(parameterCombinations[1:5]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
             try 
                 seed = 1
-                @time midPrices, microPrices = simulate(parameters, gateway, false, false, seed = seed)
+                @time midPrices, microPrices = simulate(parameters, gateway, false, false, false, seed = seed)
                 if isnothing(midPrices) && isnothing(microPrices)
                     println("\nParameter Set: $(i-1) finished\n")
                     break

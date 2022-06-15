@@ -14,7 +14,7 @@ function Listen(receiver, messages_chnl, messages_received)
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            # println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
+            println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
         end
     catch e
         if e isa EOFError
@@ -659,7 +659,7 @@ end
 
 ###################### Tommorow
 #                      (1) 
-function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plot::Bool, write::Bool; seed = 1)
+function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed = 1)
     # TODO: Refactor  
 
     # define some storage
@@ -723,8 +723,18 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         for i in 1:Nᴸᵥ
             push!(fundamentalist_f, [])
         end
-        spreads = Array{Float64, 1}()
         imbalances = Array{Float64, 1}()
+        if !(write_volume_spread)
+            spreads = Array{Float64, 1}()
+            ask_volumes = Array{Float64, 1}()
+            bid_volumes = Array{Float64, 1}()
+            best_ask_volumes = Array{Float64, 1}()
+            best_bid_volumes = Array{Float64, 1}()
+        end
+    end
+
+    if write_volume_spread
+        spreads = Array{Float64, 1}()
         ask_volumes = Array{Float64, 1}()
         bid_volumes = Array{Float64, 1}()
         best_ask_volumes = Array{Float64, 1}()
@@ -752,8 +762,24 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
         for i in 1:Nᴸᵥ
             push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
         end
-        push!(spreads, simulationstate.LOB.sₜ)
         push!(imbalances, simulationstate.LOB.ρₜ)
+        if !(write_volume_spread)
+            push!(spreads, simulationstate.LOB.sₜ)
+            if length(simulationstate.LOB.asks) > 0
+                push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
+            end
+            
+            if length(simulationstate.LOB.bids) > 0
+                push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
+            end
+
+            push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
+            push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
+        end
+    end
+
+    if write_volume_spread
+        push!(spreads, simulationstate.LOB.sₜ)
         if length(simulationstate.LOB.asks) > 0
             push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
         end
@@ -764,7 +790,6 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
         push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
         push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
-
     end
 
     # println("\n#################################################################### Initialization Done\n")
@@ -809,8 +834,22 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
                         for i in 1:Nᴸᵥ
                             push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
                         end
-                        push!(spreads, simulationstate.LOB.sₜ)
                         push!(imbalances, simulationstate.LOB.ρₜ)
+                        if !(write_volume_spread)
+                            push!(spreads, simulationstate.LOB.sₜ)
+                            if length(simulationstate.LOB.asks) > 0
+                                push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
+                                push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
+                            end
+                            if length(simulationstate.LOB.bids) > 0
+                                push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
+                                push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
+                            end
+                        end
+                    end
+
+                    if write_volume_spread
+                        push!(spreads, simulationstate.LOB.sₜ)
                         if length(simulationstate.LOB.asks) > 0
                             push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
                             push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
@@ -865,7 +904,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     end
 
     # write all the orders received after initialization to a file 
-    if write
+    if write_messages
 
         # open file and write
         open(path_to_files * "/Data/CoinTossX/Raw.csv", "w") do file
@@ -909,6 +948,16 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
         end
 
+    end
+
+    # write volume and spread information that create historical spread and volume distribtutions
+    if write_volume_spread
+        spread_df = DataFrame(Spread = spreads)
+        bid_vol_df = DataFrame(TotalBidVolume = bid_volumes, BestBidVolume = best_bid_volumes)
+        ask_vol_df = DataFrame(TotalASKVolume = ask_volumes, BestAskVolume = best_ask_volumes)
+        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/SpreadData.csv", spread_df, header = true, append = true) # keep the header as it marks the end of a single sim
+        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/BidVolumeData.csv", bid_vol_df, header = true, append = true)
+        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/AskVolumeData.csv", ask_vol_df, header = true, append = true)
     end
 
     # return mid-prices and micro-prices
