@@ -27,117 +27,6 @@ function Listen(receiver, messages_chnl, messages_received)
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Summary Stuff Used For Testing -----# 
-
-function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
-    println("Messages received: " * string(length(messages_received)))
-
-    println("Number of asks: " * string(length(LOB.asks)))
-    println("Number of bids: " * string(length(LOB.bids)))
-
-    ask_max = findmax(ask_volumes)
-    println("Max Ask Volume: " *string(ask_max[1]) * " At: " * string(ask_max[2]))
-    bid_max = findmax(bid_volumes)
-    println("Max Bid Volume: " *string(bid_max[1]) * " At: " * string(bid_max[2]))
-
-    println("Chartist MAs: " * join([char_traders_vec[i].λ for i in 1:parameters.Nᴸₜ], " "))
-
-    println("HF Orders: " * string(sum(length(hf_traders_vec[i].actionTimes) for i in 1:parameters.Nᴴ)))
-    println("Chartist Trades: " * join([length(char_traders_vec[i].actionTimes) for i in 1:parameters.Nᴸₜ], " "))
-    println("Fun Trades: " * join([length(fun_traders_vec[i].actionTimes) for i in 1:parameters.Nᴸᵥ], " "))
-
-    println("Fun Prices: " * join([string(fun_traders_vec[i].fₜ) for i in 1:parameters.Nᴸᵥ], " "))
-
-    # plot the mid price 
-    p1 = plot(mid_prices, label = "mid-price", title = "Prices and Traders Info", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Price")
-
-    # add best bid and best ask
-    scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
-    scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
-
-    # add ma of the chartist
-    for i in 1:Nᴸₜ
-        plot!(chartist_ma[i], label = "MA"*string(i))
-    end
-    for i in 1:Nᴸᵥ
-        plot!(fundamentalist_f[i], label = "F"*string(i))
-    end
-
-    # New plot of the spread over time 
-    p2 = plot(spreads, label = "spread", title = "Spread", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Spread")
-
-    # plot the order imbalance
-    p3 = plot(imbalances, label = "imbalance", title = "Imbalance", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Order Imbalance")
-
-    # only prices plot
-    p4 = plot(mid_prices, label = "mid-price", title = "Prices", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Price")
-
-    # add best bid and best ask
-    scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
-    scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
-
-    # plot the bids ask Volumes
-    p5 = plot(ask_volumes, label = "asks", title = "Volumes", color="red", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Cumulative Volume")
-    plot!(bid_volumes, label = "bids", color="green")
-
-    p6 = plot(p1, p4, p3, p5, layout = 4, legend = false)
-
-    p7 = plot(mid_prices, label = "mid-price", title = "Prices and Moving Averages", legend = :outertopright)
-    xlabel!("Trade Num")
-    ylabel!("Price")
-
-    # add best bid and best ask
-    scatter!(best_asks, label = "best asks", color = "red", markersize = 2, markerstrokewidth = 0)
-    scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
-
-    # add ma of the chartist
-    for i in 1:Nᴸₜ
-        plot!(chartist_ma[i], label = "MA"*string(i) * "(" * string(round(char_traders_vec[i].λ, digits = 4)) * ")")
-    end
-
-    p8 = histogram(spreads, fillcolor = :green, linecolor = :green, xlabel = "Spread", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
-
-    p9 = histogram(bid_volumes, fillcolor = :green, linecolor = :green, xlabel = "Total Bid Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
-
-    p10 = histogram(ask_volumes, fillcolor = :green, linecolor = :green, xlabel = "Total Ask Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
-
-    p11 = histogram(best_bid_volumes, fillcolor = :green, linecolor = :green, xlabel = "Best bid Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
-
-    p12 = histogram(best_ask_volumes, fillcolor = :green, linecolor = :green, xlabel = "Best Ask Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent)
-
-    println("best bids ", length(findall(x -> x <= mean(best_bid_volumes), best_bid_volumes)), " total length ", length(best_bid_volumes))
-    println("best asks ", length(findall(x -> x <= mean(best_ask_volumes), best_ask_volumes)), " total length ", length(best_ask_volumes))
-
-    println("mean best bid = ", mean(best_bid_volumes))
-    println("mean best ask = ", mean(best_ask_volumes))
-
-    # save plots to vis them 
-    Plots.savefig(p1, path_to_files * "TestImages/prices_with_fun_char.pdf")
-    Plots.savefig(p2, path_to_files * "TestImages/spread.pdf")
-    Plots.savefig(p3, path_to_files * "TestImages/imbalance.pdf")
-    Plots.savefig(p4, path_to_files * "TestImages/prices.pdf")
-    Plots.savefig(p5, path_to_files * "TestImages/volumes.pdf")
-    Plots.savefig(p6, path_to_files * "TestImages/all.pdf")
-    Plots.savefig(p7, path_to_files * "TestImages/prices_MAs.pdf")
-    Plots.savefig(p8, path_to_files * "TestImages/spread_dist.pdf")
-    Plots.savefig(p9, path_to_files * "TestImages/total_bid_volume.pdf")
-    Plots.savefig(p10, path_to_files * "TestImages/total_ask_volume.pdf")
-    Plots.savefig(p11, path_to_files * "TestImages/best_bid_volume.pdf")
-    Plots.savefig(p12, path_to_files * "TestImages/best_ask_volume.pdf")
-end
-
-#---------------------------------------------------------------------------------------------------
-
 #----- Auxilary Structures -----#
 mutable struct Parameters
     Nᴸₜ::Int64 # Number of chartists for the low-frequency agent class
@@ -212,6 +101,8 @@ mutable struct HighFrequency <: Actor{SimulationState}
     currentOrders::Array{Tuple{DateTime, Order}, 1} # the HF agents current orders in the order book (used for cancellations) (DateTime is the time the order was sent)
 end
 #---------------------------------------------------------------------------------------------------
+
+include(path_to_files * "Scripts/SimulationUtilities.jl") # have to include here otherwise it throws type errors
 
 #----- Agent rules -----# 
 function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::SimulationState)
@@ -435,6 +326,12 @@ function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::S
     end
     
 end
+
+# Define the trading for the RL agent and the updating of the Q-matrix
+function RL()
+    return
+end
+
 #---------------------------------------------------------------------------------------------------
 
 #----- Define How Subject Passes Messages to Actors -----#
@@ -469,6 +366,8 @@ Rocket.on_complete!(actor::Chartist)        = println("ID: " * actor.traderId * 
 Rocket.on_next!(actor::Fundamentalist, simulationstate::SimulationState) = FundamentalistAction(actor, simulationstate)
 Rocket.on_error!(actor::Fundamentalist, err)      = error(err)
 Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
+
+# RL
 
 #---------------------------------------------------------------------------------------------------
 
@@ -703,7 +602,6 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     # initialize the Subject and subscribe actors to it
     source = Subject(SimulationState)
     map(i -> subscribe!(source, i), hf_traders_vec)
-
     map(i -> subscribe!(source, i), char_traders_vec)
     map(i -> subscribe!(source, i), fun_traders_vec)
 
@@ -712,33 +610,9 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     micro_prices = Array{Float64, 1}()
 
     # define some storage for test images
-    if print_and_plot
-        best_bids = Array{Float64, 1}()
-        best_asks = Array{Float64, 1}()
-        chartist_ma = Vector{Vector{Float64}}()
-        fundamentalist_f = Vector{Vector{Float64}}()
-        for i in 1:Nᴸₜ
-            push!(chartist_ma, []) 
-        end
-        for i in 1:Nᴸᵥ
-            push!(fundamentalist_f, [])
-        end
-        imbalances = Array{Float64, 1}()
-        if !(write_volume_spread)
-            spreads = Array{Float64, 1}()
-            ask_volumes = Array{Float64, 1}()
-            bid_volumes = Array{Float64, 1}()
-            best_ask_volumes = Array{Float64, 1}()
-            best_bid_volumes = Array{Float64, 1}()
-        end
-    end
-
-    if write_volume_spread
-        spreads = Array{Float64, 1}()
-        ask_volumes = Array{Float64, 1}()
-        bid_volumes = Array{Float64, 1}()
-        best_ask_volumes = Array{Float64, 1}()
-        best_bid_volumes = Array{Float64, 1}()
+    running_totals = nothing
+    if print_and_plot || write_volume_spread
+        running_totals = InitializeRunningTotals(Nᴸₜ, Nᴸᵥ)
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
@@ -753,43 +627,8 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     push!(micro_prices, simulationstate.LOB.microPrice)
 
     # push start state info to the running totals
-    if print_and_plot
-        push!(best_bids, simulationstate.LOB.bₜ)
-        push!(best_asks, simulationstate.LOB.aₜ)
-        for i in 1:Nᴸₜ
-            push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
-        end
-        for i in 1:Nᴸᵥ
-            push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
-        end
-        push!(imbalances, simulationstate.LOB.ρₜ)
-        if !(write_volume_spread)
-            push!(spreads, simulationstate.LOB.sₜ)
-            if length(simulationstate.LOB.asks) > 0
-                push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
-            end
-            
-            if length(simulationstate.LOB.bids) > 0
-                push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
-            end
-
-            push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
-            push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
-        end
-    end
-
-    if write_volume_spread
-        push!(spreads, simulationstate.LOB.sₜ)
-        if length(simulationstate.LOB.asks) > 0
-            push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
-        end
-        
-        if length(simulationstate.LOB.bids) > 0
-            push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
-        end
-
-        push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
-        push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
+    if print_and_plot || write_volume_spread
+        UpdateRunningTotals(running_totals, Nᴸₜ, Nᴸᵥ, simulationstate.LOB.bₜ, simulationstate.LOB.aₜ, char_traders_vec, fun_traders_vec, simulationstate.LOB.ρₜ, simulationstate.LOB.sₜ, simulationstate.LOB.asks, simulationstate.LOB.bids)
     end
 
     # println("\n#################################################################### Initialization Done\n")
@@ -825,39 +664,8 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
                     push!(micro_prices, simulationstate.LOB.microPrice)
 
                     # Update running state info
-                    if print_and_plot
-                        push!(best_bids, simulationstate.LOB.bₜ)
-                        push!(best_asks, simulationstate.LOB.aₜ)
-                        for i in 1:Nᴸₜ
-                            push!(chartist_ma[i], char_traders_vec[i].p̄ₜ) 
-                        end
-                        for i in 1:Nᴸᵥ
-                            push!(fundamentalist_f[i], fun_traders_vec[i].fₜ)
-                        end
-                        push!(imbalances, simulationstate.LOB.ρₜ)
-                        if !(write_volume_spread)
-                            push!(spreads, simulationstate.LOB.sₜ)
-                            if length(simulationstate.LOB.asks) > 0
-                                push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
-                                push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
-                            end
-                            if length(simulationstate.LOB.bids) > 0
-                                push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
-                                push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
-                            end
-                        end
-                    end
-
-                    if write_volume_spread
-                        push!(spreads, simulationstate.LOB.sₜ)
-                        if length(simulationstate.LOB.asks) > 0
-                            push!(ask_volumes, sum(order.volume for order in values(simulationstate.LOB.asks)))
-                            push!(best_ask_volumes, sum(order.volume for order in values(LOB.asks) if order.price == LOB.aₜ))
-                        end
-                        if length(simulationstate.LOB.bids) > 0
-                            push!(bid_volumes, sum(order.volume for order in values(simulationstate.LOB.bids)))
-                            push!(best_bid_volumes, sum(order.volume for order in values(LOB.bids) if order.price == LOB.bₜ))
-                        end
+                    if print_and_plot || write_volume_spread
+                        UpdateRunningTotals(running_totals, Nᴸₜ, Nᴸᵥ, simulationstate.LOB.bₜ, simulationstate.LOB.aₜ, char_traders_vec, fun_traders_vec, simulationstate.LOB.ρₜ, simulationstate.LOB.sₜ, simulationstate.LOB.asks, simulationstate.LOB.bids)
                     end
 
                 end
@@ -900,64 +708,17 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # Print summary stats and plot test images 
     if print_and_plot
-        SummaryAndTestImages(messages_chnl, simulationstate.LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
+        SummaryAndTestImages(messages_chnl, simulationstate.LOB, mid_prices, running_totals.best_bids, running_totals.best_asks, running_totals.spreads, running_totals.imbalances, running_totals.chartist_ma, running_totals.fundamentalist_f, running_totals.ask_volumes, running_totals.bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, running_totals.best_bid_volumes, running_totals.best_ask_volumes)
     end
 
     # write all the orders received after initialization to a file 
     if write_messages
-
-        # open file and write
-        open(path_to_files * "/Data/CoinTossX/Raw.csv", "w") do file
-
-            # set the Header
-            println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,ClientOrderId,Price,Volume")
-
-            # add initial messages
-            for message in initial_messages_received
-                message_arr = split(message, "|")
-                # dont write empty messages
-                if message_arr[3] == ""
-                    continue
-                end
-                if length(message_arr) > 3 # trade that walked the LOB
-                    message_info = join(message_arr[1:2], ",")
-                    for trade in message_arr[3:end]
-                        println(file, "INITIAL" * "," * message_info * "," * trade)
-                    end
-                else
-                    println(file, "INITIAL" * "," *join(split(message, "|"), ",")) 
-                end 
-            end
-
-            # add sim messages
-            for message in messages_received
-                message_arr = split(message, "|")
-                # dont write empty messages
-                if message_arr[3] == ""
-                    continue
-                end
-                if length(message_arr) > 3 # trade that walked the LOB
-                    message_info = join(message_arr[1:2], ",")
-                    for trade in message_arr[3:end]
-                        println(file, "SIMULATION" * "," * message_info * "," * trade)
-                    end
-                else
-                    println(file, "SIMULATION" * "," *join(split(message, "|"), ",")) 
-                end
-            end
-
-        end
-
+        WriteMessages(initial_messages_received, messages_received)
     end
 
     # write volume and spread information that create historical spread and volume distribtutions
     if write_volume_spread
-        spread_df = DataFrame(Spread = spreads)
-        bid_vol_df = DataFrame(TotalBidVolume = bid_volumes, BestBidVolume = best_bid_volumes)
-        ask_vol_df = DataFrame(TotalASKVolume = ask_volumes, BestAskVolume = best_ask_volumes)
-        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/SpreadData.csv", spread_df, header = true, append = true) # keep the header as it marks the end of a single sim
-        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/BidVolumeData.csv", bid_vol_df, header = true, append = true)
-        CSV.write(path_to_files * "/Data/RL/HistoricalDistributions/AskVolumeData.csv", ask_vol_df, header = true, append = true)
+        WriteVolumeSpreadData(running_totals.spreads, running_totals.bid_volumes, running_totals.best_bid_volumes, running_totals.ask_volumes, running_totals.best_ask_volumes)
     end
 
     # return mid-prices and micro-prices
