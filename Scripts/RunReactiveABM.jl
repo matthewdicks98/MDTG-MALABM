@@ -27,13 +27,26 @@ seed = 1 # 125 has price decrease
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
+# Rl parameters
+Nᵣₗ = 1                      # num rl agents
+startTime = Millisecond(10)  # start time for RL agents
+T = Millisecond(100)         # execution time for RL agents 
+V = 1000                     # volume to trade in each execution
+I = 10                       # number of invetory states
+B = 5                        # number of spread states
+W = 5                        # number of volume states
+A = 10
+
+rlParameters = RLParameters(Nᵣₗ, startTime, T, V, I, B, W, A)
+
 # set the parameters that dictate output
 print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
 write_messages = false                             # Says whether or not the messages data must be written to a file
-write_volume_spread = true
+write_volume_spread = false
+rlTraders = true
 # run the simulation
 try 
-    @time simulate(parameters, gateway, print_and_plot, write_messages, write_volume_spread, seed = seed)
+    @time simulate(parameters, rlParameters, gateway, rlTraders, print_and_plot, write_messages, write_volume_spread, seed = seed)
 catch e
     @error "Something went wrong" exception=(e, catch_backtrace())
 finally

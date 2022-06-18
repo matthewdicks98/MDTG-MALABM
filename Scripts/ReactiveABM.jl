@@ -1,5 +1,5 @@
 ENV["JULIA_COPY_STACKS"]=1
-using JavaCall, Rocket, Sockets, Random, Dates, Distributions, Plots, CSV, DataFrames
+using JavaCall, Rocket, Sockets, Random, Dates, Distributions, Plots, CSV, DataFrames, DataStructures
 import Rocket.scheduled_next!
 
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
@@ -45,6 +45,20 @@ mutable struct Parameters
 		new(Nᴸₜ, Nᴸᵥ, Nᴴ, δ, κ, ν, m₀, σᵥ, λmin, λmax, γ, T)
 	end
 end 
+mutable struct RLParameters
+    Nᵣₗ::Int64             # Number of RL agents
+    startTime::Millisecond # defines the time to start trading for the first execution (the rest of the executions can be defined from this and T)
+    T::Millisecond         # total time to trade for a single execution of volume
+    numT::Int64            # number of time states
+    V::Int64               # total volume to trade for a single execution
+    I::Int64               # number of inventory states
+    B::Int64               # number of spread states
+    W::Int64               # number of volume states
+    A::Int64               # number of action states
+    spread_states_df::DataFrame # Stores the spread states for the RL agent
+    volume_states_df::DataFrame # Stores the volume states for the RL agent
+    type::String           # indicates type of MO the agent will perform if it is a single agent 
+end
 mutable struct LimitOrder
     price::Int64
     volume::Int64
@@ -72,6 +86,7 @@ end
 mutable struct SimulationState
     LOB::LOBState
     parameters::Parameters
+    rlParameters::RLParameters
     gateway::TradingGateway
     initializing::Bool
     event_counter::Int64
@@ -100,9 +115,23 @@ mutable struct HighFrequency <: Actor{SimulationState}
     actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a trade
     currentOrders::Array{Tuple{DateTime, Order}, 1} # the HF agents current orders in the order book (used for cancellations) (DateTime is the time the order was sent)
 end
+
+mutable struct RL <: Actor{SimulationState}
+    traderId::Int64 # uniquely identifies an agent
+    traderMnemonic::String # used to record who sent the orders
+    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
+
+    actionType::String     # defines if the agent will be buying or selling
+    
+    tₙ::Int64               # time remaining
+    iₙ::Int64               # volume remaining             
+
+    R::Vector{Float64}   # reward stored over the course of a single execution
+    Q::DefaultDict       # is the Q matrix for the RL agent for a single execution (only add a state-action pair when it is seen for the first time, don't initialize full Q)
+end
 #---------------------------------------------------------------------------------------------------
 
-include(path_to_files * "Scripts/SimulationUtilities.jl") # have to include here otherwise it throws type errors
+include(path_to_files * "Scripts/SimulationUtilities.jl") # have to include here otherwise it throws type errors (should refactor this)
 
 #----- Agent rules -----# 
 function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::SimulationState)
@@ -328,8 +357,24 @@ function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::S
 end
 
 # Define the trading for the RL agent and the updating of the Q-matrix
-function RL()
-    return
+function RLAction(rlAgent::RL, simulationstate::SimulationState)
+
+    # if the order book is being initialized do nothing
+    if simulationstate.initializing 
+        return
+    end
+
+    if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
+        return
+    end
+
+    # order = Order(orderId = 1, traderMnemonic = string("RL", 1), type = "Market")
+    # order.side = "Sell"
+    # order.volume = 1
+    # SubmitOrder(simulationstate.gateway, order)
+    state = GetState(simulationstate.LOB, 1, 1, rlParameters, rlAgent)
+    rlAgent.Q[state][1] += 1
+
 end
 
 #---------------------------------------------------------------------------------------------------
@@ -368,6 +413,9 @@ Rocket.on_error!(actor::Fundamentalist, err)      = error(err)
 Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
 # RL
+Rocket.on_next!(actor::RL, simulationstate::SimulationState) = RLAction(actor, simulationstate)
+Rocket.on_error!(actor::RL, err)      = error(err)
+Rocket.on_complete!(actor::RL)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
 #---------------------------------------------------------------------------------------------------
 
@@ -558,22 +606,14 @@ end
 
 ###################### Tommorow
 #                      (1) 
-function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed = 1)
+function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::TradingGateway, rlTraders::Bool, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed = 1)
     # TODO: Refactor  
 
-    # define some storage
-    # global event_counter = 0
-    # global max_events = 10000 # after initialization
-    # global gateway = g
-    # global parameters = p
     initial_messages_received = Vector{String}() # stores all initialization messages
     messages_received = Vector{String}()         # stores all messages after initialization
 
     # start new LOB (trading session)
     StartLOB(gateway) 
-
-    # set the seed to ensure reproducibility (ensures that chartist MA and Fun prices are the same)
-    Random.seed!(seed)
 
     # open the channel that stores all the messages read from the UDP buffer
     chnl_size = Inf
@@ -583,7 +623,7 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
 
     # Set the first subject messages
-    simulationstate = SimulationState(LOB, parameters, gateway, true, 1, Dates.now())
+    simulationstate = SimulationState(LOB, parameters, rlParameters, gateway, true, 1, Dates.now())
 
     # open the UDP socket
     receiver = UDPSocket()
@@ -592,18 +632,26 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
 
     # initialize the traders
     hf_traders_vec = map(i -> HighFrequency(i, "HF"*string(i), Array{Millisecond,1}(), Array{Tuple{DateTime, Order}, 1}()), 1:parameters.Nᴴ)
+
+    # set the seed to ensure reproducibility (for chartist forgetting factors)
+    Random.seed!(seed)
     char_traders_vec = map(i -> Chartist(i, "TF"*string(i), parameters.m₀, Array{Millisecond,1}(), rand(Uniform(parameters.λmin, parameters.λmax))), 1:parameters.Nᴸₜ)
     
-    # set the seed to ensure reproducibility
+    # set the seed to ensure reproducibility (for fundamental prices)
     Random.seed!(seed)
-    
     fun_traders_vec = map(i -> Fundamentalist(i, "VI"*string(i), parameters.m₀ * exp(rand(Normal(0, parameters.σᵥ))), Array{Millisecond,1}()), 1:parameters.Nᴸᵥ)
+
+    # initialize RL Traders (change to deal with multiple RL agents having different types)
+    rl_traders_vec = map(i -> RL(i, "RL"*string(i), Array{Millisecond,1}(), rlParameters.type, rlParameters.T.value, rlParameters.V, Vector{Float64}(), DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))), 1:rlParameters.Nᵣₗ) 
 
     # initialize the Subject and subscribe actors to it
     source = Subject(SimulationState)
     map(i -> subscribe!(source, i), hf_traders_vec)
     map(i -> subscribe!(source, i), char_traders_vec)
     map(i -> subscribe!(source, i), fun_traders_vec)
+    if rlTraders
+        map(i -> subscribe!(source, i), rl_traders_vec)
+    end
 
     # storage for the prices
     mid_prices = Array{Float64, 1}()
@@ -720,6 +768,12 @@ function simulate(parameters::Parameters, gateway::TradingGateway, print_and_plo
     if write_volume_spread
         WriteVolumeSpreadData(running_totals.spreads, running_totals.bid_volumes, running_totals.best_bid_volumes, running_totals.ask_volumes, running_totals.best_ask_volumes)
     end
+
+    println()
+    for key in keys(rl_traders_vec[1].Q)
+        println(key, " => ", rl_traders_vec[1].Q[key])
+    end
+    println()
 
     # return mid-prices and micro-prices
     return mid_prices, micro_prices
