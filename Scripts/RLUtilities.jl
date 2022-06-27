@@ -1,5 +1,5 @@
 ENV["JULIA_COPY_STACKS"]=1
-using DataFrames, CSV, Plots, Statistics
+using DataFrames, CSV, Plots, Statistics, DataStructures, JLD
 
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 include(path_to_files * "Scripts/ReactiveABM.jl"); include(path_to_files * "Scripts/CoinTossXUtilities.jl")
@@ -126,12 +126,71 @@ function HistoricalDistributionsStates(numSpreadQuantiles::Int64, numVolumeQuant
         CSV.write(path_to_files * "/Data/RL/SpreadVolumeStates/VolumeStates" * string(id) * ".csv", volume_states_df)
     end
 
-    println("----------------------------------------------------------------")
-
     return spread_states_df, volume_states_df
 
 end
 # spread_states_df, volume_states_df = HistoricalDistributionsStates(5,5,false,false,1)
+#---------------------------------------------------------------------------------------------------
+
+#----- Return actions -----# 
+function GenerateActions(A::Int64)
+    println("-------------------------------- Generating Actions --------------------------------")
+    actions = Dict{Int64, Float64}()
+    for (i, p) in enumerate(range(0, 1, A))
+        actions[i] = p^2
+    end
+    return actions
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Given the last RL messages return the volume traded and the profit/cost of the trade -----# 
+function ProcessMessages(messages::Vector{String}, rlAgent::RL)
+
+    total_volume_traded = 0
+    sum_price_volume = 0
+    trade_message = ""
+
+    for message in messages
+
+        # take the time out of the message
+        msg = split(message, "|")[2:end]
+
+        #msg = split(message, "|")
+        fields = split(msg[1], ",")
+
+        # need 2 types (Type is the original one and type is the one that changes (crossing LOs))
+        trader = fields[3]
+
+        # check if it is an order for the current RL trader
+        if trader == rlAgent.traderMnemonic
+
+            # get the executions
+            executions = msg[2:end]
+            if executions == [""]
+                return 0, 0, ""      
+            end
+
+            for execution in executions
+                executionFields = split(execution, ",")
+                id = parse(Int, executionFields[1]); price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
+                total_volume_traded += volume
+                sum_price_volume += price * volume
+            end
+
+            trade_message = message
+
+            break # only 1 order (message) per event loop per trader
+
+        end
+
+    end
+
+    if total_volume_traded == 0 && sum_price_volume == 0
+        return 0, 0, ""
+    else
+        return total_volume_traded, sum_price_volume, trade_message
+    end
+end
 #---------------------------------------------------------------------------------------------------
 
 #----- Return current state -----# 
@@ -154,8 +213,8 @@ function GetSpreadState(LOB::LOBState, rlParameters::RLParameters)
     if LOB.sₜ <= 0
         sₙ = 1
     end
-    println("Spread = ", LOB.sₜ)
-    println("Spread State = ", sₙ)
+    # println("Spread = ", LOB.sₜ)
+    # println("Spread State = ", sₙ)
     return sₙ
 end
 function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
@@ -182,14 +241,14 @@ function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
         end
         lower = upper
     end
-    if state_counter > rlParameters.W # if the spread is greater than the max volume of historical dist then assign it to the last state
+    if state_counter > rlParameters.W # if the volume is greater than the max volume of historical dist then assign it to the last state
         vₙ = rlParameters.W
     end
     if v <= 0
         vₙ = 1
     end
-    println("Volume = ", v)
-    println("Volume State = ", vₙ)
+    # println("Volume = ", v, " | At = ", LOB.bₜ)
+    # println("Volume State = ", vₙ)
     return vₙ
 end
 function GetTimeState(t::Int64, rlParameters::RLParameters)
@@ -199,7 +258,7 @@ function GetTimeState(t::Int64, rlParameters::RLParameters)
     upper_t = 0 + τ
     tₙ = 0
     state_counter = 1
-    for i in 1:numT # numT
+    for i in 1:rlParameters.numT # numT
         if lower_t < t && t <= upper_t
             tₙ = state_counter
             break
@@ -213,10 +272,10 @@ function GetTimeState(t::Int64, rlParameters::RLParameters)
         tₙ = rlParameters.numT
     end
     if t <= 0
-        tₙ = 1
+        tₙ = 0  # this means that we will take an action such that we transition us to the terminal state with probability 1
     end
-    println("Time = ", t)
-    println("Time State = ", tₙ)
+    # println("Time = ", t)
+    # println("Time State = ", tₙ)
     return tₙ
 end
 function GetInventoryState(i::Int64, rlParameters::RLParameters)
@@ -225,7 +284,7 @@ function GetInventoryState(i::Int64, rlParameters::RLParameters)
     upper_i = 0 + interval
     iₙ = 0
     state_counter = 1
-    for j in 1:I # numT
+    for j in 1:rlParameters.I # numT
         if lower_i < i && i <= upper_i
             iₙ = state_counter
             break
@@ -239,10 +298,10 @@ function GetInventoryState(i::Int64, rlParameters::RLParameters)
         iₙ = rlParameters.I
     end
     if i <= 0
-        iₙ = 1
+        iₙ = 0 # this will then mean that we are going to return the terminal state, we have stopped trading
     end
-    println("Inventory = ", i)
-    println("Inventory State = ", iₙ)
+    # println("Inventory = ", i)
+    # println("Inventory State = ", iₙ)
     return iₙ
 end
 function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters, rlAgent::RL) # t and i are the remaining time and inventory
@@ -259,20 +318,180 @@ function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters,
     # find the inventory remaining state
     iₙ = GetInventoryState(i, rlParameters)
 
-    # return the state vector <tₙ, iₙ, sₙ, vₙ>
-    println([tₙ, iₙ, sₙ, vₙ])
-    return [tₙ, iₙ, sₙ, vₙ]
+    # check if terminal and return the state vector <tₙ, iₙ, sₙ, vₙ>
+    if iₙ == 0
+        return [0, 0, 0, 0], true # return terminal state and say that we are done
+    else
+        return [tₙ, iₙ, sₙ, vₙ], false # return state and say that we still have inventory to trade
+    end
 
 end
 #---------------------------------------------------------------------------------------------------
 
 #----- Epsilon Greedy Policy -----# 
+function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Float64, rlAgent::RL)
+    # create and epsilon greedy policy for a given state
+    num_actions_state = length(Q[state])
+    policy = fill(epsilon / num_actions_state, num_actions_state) # each state has an equal prob of being chosen
+    # get the action with the lowest (highest) value for selling (buying)
+    a_star = nothing
+    if rlAgent.actionType == "Sell" # want to maximize the profit
+        a_star = argmax(Q[state]) # change so that action 1 isnt always selected for a new state
+    elseif rlAgent.actionType == "Buy" # want to mimimize the cost (might need to change)
+        a_star = argmin(Q[state])
+    end
+    # the optimal action will be chosen with this probability
+    policy[a_star] = 1 - epsilon + (epsilon / num_actions_state)
+    return policy
+end
 
 #---------------------------------------------------------------------------------------------------
 
-#----- Simulate ABM with RL agent -----# 
+#----- Test ABM Simulation with RL agent -----# 
+function TestRunRLABM()
+    # set the parameters
+    Nᴸₜ = 8             # [3,6,9,12]
+    Nᴸᵥ = 6
+    Nᴴ = 30             # fixed at 30
+    δ = 0.125           # 0.01, 0.07, 0.14, 0.2
+    κ = 3.389           # 2, 3, 4, 5
+    ν = 7.221               # 2, 4, 6, 8
+    m₀ = 10000          # fixed at 10000
+    σᵥ = 0.041         # 0.0025, 0.01, 0.0175, 0.025
+    λmin = 0.0005       # fixed at 0.0005
+    λmax = 0.05         # fixed at 0.05
+    γ = Millisecond(1000) # fixed at 1000
+    T = Millisecond(25000) # fixed at 25000 
+    seed = 8 # 6, 8, 9
 
+    parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
+
+    # Rl parameters
+    Nᵣₗ = 1                      # num rl agents
+    startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
+    rlT = Millisecond(24500)        # execution time for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+    numT = 10                   # number of time states (T must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
+    V = 50000                     # volume to trade in each execution
+    I = 10                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
+    B = 5                        # number of spread states
+    W = 5                        # number of volume states
+    A = 10                       # number of action states
+
+    spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,false,1)
+    actions = GenerateActions(A)
+    actionType = "Sell"
+    ϵ = 0.1            # used in epsilon greedy algorithm
+    discount_factor = 1 # used in Q update (discounts future rewards)
+    α = 0.5             # used in Q update
+
+    rlParameters = RLParameters(Nᵣₗ, startTime, rlT, numT, V, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ, discount_factor, α)
+
+    # set the parameters that dictate output
+    print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
+    write_messages = false                             # Says whether or not the messages data must be written to a file
+    write_volume_spread = false
+    rlTraders = true
+
+    # run the simulation
+    StartJVM()
+    gateway = Login(1,1)
+    try 
+        @time simulate(parameters, rlParameters, gateway, rlTraders, print_and_plot, write_messages, write_volume_spread, seed = seed)
+    catch e
+        @error "Something went wrong" exception=(e, catch_backtrace())
+    finally
+        Logout(gateway)
+        # StopCoinTossX()
+    end
+end
+# TestRunRLABM()
 #---------------------------------------------------------------------------------------------------
+
+#----- Train RL Agent in an ABM -----# 
+function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes::Int64)
+
+    println("-------------------------------- Training RL Agent --------------------------------")
+
+    # define storage
+    rl_results = Vector{Dict}()
+
+    prev_q = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))
+
+    # run the simulation
+    StartJVM()
+    gateway = Login(1,1)
+    try 
+        for i in 1:numEpisodes
+
+            println()
+            println("------------------------ ", i, " ------------------------")
+            println()
+
+            @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, true, false, false, false, seed = 1)           
+            
+            # print some test stuff
+            # println("Initial Q ")
+            # for key in keys(rlParameters.initialQ)
+            #     println(key, " => ",rlParameters.initialQ[key], " | Total actions = ", sum(rlParameters.initialQ[key]))
+            # end
+            println()
+            println("Resulting Q")
+            for key in keys(rl_result["Q"])
+                println(key, " => ",rl_result["Q"][key], " | Total actions = ", sum(rl_result["Q"][key]))
+            end
+            println()
+            # if i > 1
+            #     println(prev_q == rlParameters.initialQ)
+                
+            #     if prev_q == rlParameters.initialQ
+            #         println()
+            #         println()
+            #         println("Prev Q")
+            #         for key in keys(prev_q)
+            #             println(key, " => ",prev_q[key], " | Total actions = ", sum(prev_q[key]))
+            #         end
+            #         println()
+            #         println("Initial Q")
+            #         for key in keys(rlParameters.initialQ)
+            #             println(key, " => ",rlParameters.initialQ[key], " | Total actions = ", sum(rlParameters.initialQ[key]))
+            #         end
+            #     else
+            #         println("Q Error")
+            #         return
+            #     end
+            # end
+
+            # used to test the passing of Q from one simulation to another
+            for key in keys(rl_result["Q"])
+                prev_q[key] = copy(rl_result["Q"][key])
+            end
+
+            # for the next simulation use the learnt Q from the previous as the new Q (make a copy, copy is made in the simulation)
+            rlParameters.initialQ = rl_result["Q"]
+
+            # write the RL data from that iteration to a jld database
+            @time begin
+                if isfile(path_to_files * "/Data/RL/Training/Results.jld")
+                    f = jldopen(path_to_files * "/Data/RL/Training/Results.jld", "r+")
+                    rl_result["Q"] = Dict(rl_result["Q"])
+                    f[string(i)] = rl_result
+                    close(f)
+                else
+                    rl_result["Q"] = Dict(rl_result["Q"])
+                    save(path_to_files * "/Data/RL/Training/Results.jld", string(i), rl_result)
+                end
+            end
+            # garbage collect
+            GC.gc()
+        end
+    catch e
+        @error "Something went wrong" exception=(e, catch_backtrace())
+    finally
+        Logout(gateway)
+        # StopCoinTossX()
+    end 
+
+end
 
 # set the parameters
 Nᴸₜ = 8             # [3,6,9,12]
@@ -287,40 +506,87 @@ m₀ = 10000          # fixed at 10000
 λmax = 0.05         # fixed at 0.05
 γ = Millisecond(1000) # fixed at 1000
 T = Millisecond(25000) # fixed at 25000 
-seed = 1 # 125 has price decrease
+seed = 8 # 6, 8, 9
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # Rl parameters
 Nᵣₗ = 1                      # num rl agents
-startTime = Millisecond(10)  # start time for RL agents
-T = Millisecond(100)         # execution time for RL agents 
-numT = 10                    # number of time states (T must be divisible by numT to ensure evenly spaced intervals, error will be thrown)
-V = 1000                     # volume to trade in each execution
-I = 10                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown)
+startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
+rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+numT = 10                   # number of time states (T must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
+V = 50000                     # volume to trade in each execution
+I = 10                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
 B = 5                        # number of spread states
 W = 5                        # number of volume states
-A = 10                       # number of action states
+A = 15                       # number of action states
 
 spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,false,1)
-type = "Sell"
+actions = GenerateActions(A)
+actionType = "Sell"
+ϵ = 1            # used in epsilon greedy algorithm
+discount_factor = 1 # used in Q update (discounts future rewards)
+α = 0.5             # used in Q update
+initialQ = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A))
 
-rlParameters = RLParameters(Nᵣₗ, startTime, T, numT, V, I, B, W, A, spread_states_df, volume_states_df, type)
+rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ, discount_factor, α)
 
 # set the parameters that dictate output
-print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
+print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
 write_messages = false                             # Says whether or not the messages data must be written to a file
 write_volume_spread = false
 rlTraders = true
 
-# run the simulation
-StartJVM()
-gateway = Login(1,1)
-try 
-    @time simulate(parameters, rlParameters, gateway, rlTraders, print_and_plot, write_messages, write_volume_spread, seed = seed)
-catch e
-    @error "Something went wrong" exception=(e, catch_backtrace())
-finally
-    Logout(gateway)
-    # StopCoinTossX()
+# rl training parameters
+numEpisodes = 5
+
+# train the agent
+@time TrainRL(parameters, rlParameters, numEpisodes)
+
+#---------------------------------------------------------------------------------------------------
+
+function RLTestResults()
+    l = load(path_to_files * "Data/RL/Training/Results.jld")
+    n = length(l)
+    println("---------------- Number of Actions ------------")
+    for i in 1:n
+        println(string(i), " => ", l[string(i)]["NumberActions"])
+    end
+    println()
+    println("---------------- Number of Trades ------------")
+    for i in 1:n
+        println(string(i), " => ", l[string(i)]["NumberTrades"])
+    end
+    println()
+    println("---------------- Actions ------------")
+    for i in 1:n
+        println(string(i), " => ", l[string(i)]["Actions"])
+    end
+    println()
+    println("---------------- Total Reward ------------")
+    for i in 1:n
+        println(string(i), " => ", l[string(i)]["TotalReward"])
+    end
+    println()
+    println("---------------- Rewards ------------")
+    for i in 1:n
+        println(string(i), " => ", l[string(i)]["Rewards"])
+    end
+    println()
+    println("---------------- Number of States in Q ------------")
+    for i in 1:n
+        println(string(i), " => ", length(l[string(i)]["Q"]))
+    end
+    println()
+    println("---------------- First Q ------------")
+    for key in keys(l[string(1)]["Q"])
+        println(key, " => ", l[string(1)]["Q"][key])
+    end
+    println()
+    println("---------------- Last Q ------------")
+    for key in keys(l[string(n)]["Q"])
+        println(key, " => ", l[string(n)]["Q"][key])
+    end
+
 end
+# RLTestResults()

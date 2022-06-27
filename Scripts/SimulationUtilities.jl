@@ -4,7 +4,7 @@ using Dates, Plots, CSV, DataFrames
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 
 #----- Summary Stuff Used For Testing -----# 
-function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
+function SummaryAndTestImages(messages_chnl, parameters, LOB, mid_prices, best_bids, best_asks, spreads, imbalances, chartist_ma, fundamentalist_f, ask_volumes, bid_volumes, hf_traders_vec, char_traders_vec, fun_traders_vec, messages_received, best_bid_volumes, best_ask_volumes)
     println("Messages received: " * string(length(messages_received)))
 
     println("Number of asks: " * string(length(LOB.asks)))
@@ -33,10 +33,10 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
 
     # add ma of the chartist
-    for i in 1:Nᴸₜ
+    for i in 1:parameters.Nᴸₜ
         plot!(chartist_ma[i], label = "MA"*string(i))
     end
-    for i in 1:Nᴸᵥ
+    for i in 1:parameters.Nᴸᵥ
         plot!(fundamentalist_f[i], label = "F"*string(i))
     end
 
@@ -76,7 +76,7 @@ function SummaryAndTestImages(messages_chnl, LOB, mid_prices, best_bids, best_as
     scatter!(best_bids, label = "best bids", color = "green", markersize = 2, markerstrokewidth = 0)
 
     # add ma of the chartist
-    for i in 1:Nᴸₜ
+    for i in 1:parameters.Nᴸₜ
         plot!(chartist_ma[i], label = "MA"*string(i) * "(" * string(round(char_traders_vec[i].λ, digits = 4)) * ")")
     end
 
