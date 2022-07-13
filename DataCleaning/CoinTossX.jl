@@ -211,7 +211,9 @@ Output:
 =#
 function CleanData(raw::String; initialization::Bool = false, times::Vector{Millisecond} = Vector{Millisecond}())
     println("Reading in data...")
-    orders = CSV.File(string("../Data/CoinTossX/Raw.csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
+    suffix = ""
+    raw == "Raw" ? suffix = "" : suffix = raw[4:end]
+    orders = CSV.File(string("../Data/CoinTossX/" * raw * ".csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
     replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
     orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1
     DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])
@@ -223,7 +225,7 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     bidDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7); askDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7)
     LO_ask_delay = Vector{DataFrameRow}()
     LO_bid_delay = Vector{DataFrameRow}()
-    open("../Data/CoinTossX/L1LOB.csv", "w") do file
+    open("../Data/CoinTossX/L1LOB" * suffix * ".csv", "w") do file
         println(file, "Initialization,DateTime,Price,Volume,Type,Side,MidPrice,MicroPrice,Spread") # Header
         @showprogress "Cleaning Data..." for i in 1:nrow(orders) # Iterate through all orders
             order = orders[i, :]
@@ -360,16 +362,16 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
             bidDepthProfile[i, :] = DepthProfile(bids, 1); askDepthProfile[i, :] = DepthProfile(asks, -1)
         end
     end
-    CSV.write("../Data/CoinTossX/TAQ.csv", orders)
-    CSV.write("../Data/CoinTossX/DepthProfileData.csv",  Tables.table(hcat(bidDepthProfile, askDepthProfile)), writeheader=false)
+    CSV.write("../Data/CoinTossX/TAQ" * suffix * ".csv", orders)
+    CSV.write("../Data/CoinTossX/DepthProfileData" * suffix * ".csv",  Tables.table(hcat(bidDepthProfile, askDepthProfile)), writeheader=false)
 end
 #---------------------------------------------------------------------------------------------------
 
 #----- Plot simulation results -----#
-function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime = missing, startTime = missing)
+function VisualiseSimulation(taqPath::String, l1lobPath::String; format = "pdf", endTime = missing, startTime = missing)
     # Cleaning
-    orders = CSV.File(string("../Data/CoinTossX/", taq, ".csv"), missingstring = "missing", types = Dict(:Trader => Symbol, :Initialization => Symbol, :Side => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> y.Type != :Trade, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)
-    l1lob = CSV.File(string("../Data/CoinTossX/", l1lob, ".csv"), missingstring = "missing", types = Dict(:Initialization => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> x.Type != :Market, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)# Filter out trades from L1LOB since their mid-prices are missing
+    orders = CSV.File(string("../Data/CoinTossX/", taqPath, ".csv"), missingstring = "missing", types = Dict(:Trader => Symbol, :Initialization => Symbol, :Side => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> y.Type != :Trade, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)
+    l1lob = CSV.File(string("../Data/CoinTossX/", l1lobPath, ".csv"), missingstring = "missing", types = Dict(:Initialization => Symbol, :Type => Symbol, :DateTime => DateTime)) |> DataFrame |> x -> filter(y -> x.Type != :Market, x) |> x -> filter(y -> y.Initialization != :INITIAL, x)# Filter out trades from L1LOB since their mid-prices are missing
     if !ismissing(startTime)
         filter!(x -> x.DateTime >= startTime, l1lob); filter!(x -> x.DateTime >= startTime, orders)
     end
@@ -404,7 +406,9 @@ function VisualiseSimulation(taq::String, l1lob::String; format = "pdf", endTime
     returns = plot(l1lob.RelativeTime[2:end], logreturns, seriestype = :line, linecolor = :black, legend = false, tickfontsize = 5, ylabel = "Log-returns", xticks = false)
     l = @layout([a; b{0.2h}; c{0.2h}])
     simulation = plot(bubblePlot, returns, volumeImbalance, layout = l, link = :x, guidefontsize = 7)
-    savefig(simulation, "../Images/CoinTossX/Simulation." * format)
+    suffix = ""
+    l1lobPath == "L1LOB" ? suffix = "" : suffix = l1lobPath[6:end]
+    savefig(simulation, "../Images/CoinTossX/Simulation" * suffix * "." * format)
     # Agents
     # TFSells = filter(x -> string(x.Trader)[1:2] == "TF", orders); TFBuys = filter(x -> string(x.Trader)[1:2] == "TF", orders)
     # TFAgents = plot(TFSells.RelativeTime, TFSells.Price, seriestype = :scatter, marker = (:red, stroke(:red), :dtriangle, 0.7), label = "Sell (MO)", ylabel = "Price (ticks)", legend = :topleft, legendfontsize = 5, xrotation = 30, fg_legend = :transparent)

@@ -53,7 +53,7 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
     gateway = Login(1, 1)
     open("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv", "w") do file
         println(file, "Type,Nt,Nv,Nh,Delta,Kappa,Nu,M0,SigmaV,LambdaMin,LambdaMax,Gamma,T,Seed,Mean,Std,Kurtosis,KS,Hurst,GPH,ADF,GARCH,Hill")
-        for (i, parameters) in enumerate(parameterCombinations[1:5]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
+        for (i, parameters) in enumerate(parameterCombinations) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
             try 
                 seed = 1
                 @time midPrices, microPrices = simulate(parameters, gateway, false, false, false, seed = seed)

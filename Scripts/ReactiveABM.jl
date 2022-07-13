@@ -52,6 +52,7 @@ mutable struct RLParameters
     T::Millisecond         # total time to trade for a single execution of volume
     numT::Int64            # number of time states
     V::Int64               # total volume to trade for a single execution
+    Ntwap::Float64         # number of shares to trade based on TWAP volume (V / numAgentDecisions)
     I::Int64               # number of inventory states
     B::Int64               # number of spread states
     W::Int64               # number of volume states
@@ -380,6 +381,8 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     end
 
     # if the agent has traded all the volume before the simulation is up don't trade 
+    # println()
+    # println()
     # println("Done = ", rlAgent.done)
     if rlAgent.done
         # println("Inventory Remaining = ", rlAgent.i)
@@ -429,7 +432,7 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     end
 
     # println("State = ", state)
-    # println("Terminal = ", done)
+    # println("Terminal = ", rlAgent.done)
 
     # update Q only if an action has been taken in the sim (so after the first iteration of the event loop)
     # note argmax for selling and argmin for buying agents
@@ -450,11 +453,16 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         push!(rlAgent.actions, action) 
     end
 
-    # check remaining time and if non-left trade everything
+    # check remaining time and if non-left trade everything and not in terminal state
     if remaining_time <= 0
-        println("State = ", state, " | Prev State = ", rlAgent.prev_state)
-        action = simulationstate.rlParameters.A
-        action_percentage_volume = 1
+        if !(rlAgent.done)
+            # println("State = ", state, " | Prev State = ", rlAgent.prev_state)
+            action = simulationstate.rlParameters.A
+            action_percentage_volume = 2 
+        elseif (rlAgent.done) # if time is up and we are in terminal then dont trade
+            action = 1
+            action_percentage_volume = 0
+        end
     end
 
     # perform the action
@@ -468,8 +476,9 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     volatility = false
 
     # set volume and add contra and volatility check (don't let RL agent trade if no order on the other side or if it will cause a volatility auction)
+    # action_percentage_volume 
     if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids))
-        order.volume = ceil(action_percentage_volume * rlAgent.i) 
+        order.volume = minimum([ceil(action_percentage_volume * simulationstate.rlParameters.Ntwap), rlAgent.i]) # adjust twap volume action_percentage_volume, trade remaining volume if action is too high
         contra = true
 	end
     if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
@@ -498,6 +507,8 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # println("Action = ", action)
     # println("Action Percentage Volume = ", action_percentage_volume)
     # println("Action Volume = ", order.volume)
+    # println("Contra = ", contra)
+    # println("Volatility = ", volatility)
 
     return
 
@@ -732,7 +743,7 @@ end
 
 ###################### Tommorow
 #                      (1) 
-function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::TradingGateway, rlTraders::Bool, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed = 1)
+function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::TradingGateway, rlTraders::Bool, rlTraining::Bool, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed::Int64, iteration::Int64)
     # TODO: Refactor  
 
     initial_messages_received = Vector{String}() # stores all initialization messages
@@ -916,7 +927,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
 
     # write all the orders received after initialization to a file 
     if write_messages
-        WriteMessages(initial_messages_received, messages_received)
+        WriteMessages(initial_messages_received, messages_received, rlTraining, iteration)
     end
 
     # write volume and spread information that create historical spread and volume distribtutions
@@ -924,21 +935,21 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         WriteVolumeSpreadData(running_totals.spreads, running_totals.bid_volumes, running_totals.best_bid_volumes, running_totals.ask_volumes, running_totals.best_ask_volumes)
     end
 
-    # if rlTraders
-    #     println()
+    if rlTraders
+        # println()
     #     for key in keys(rl_traders_vec[1].Q)
     #         println(key, " => ", rl_traders_vec[1].Q[key], " | Total actions = ", sum(rl_traders_vec[1].Q[key]))
     #     end
     #     println()
 
-    #     println()
+    println()
     #     println("Rewards = ", rl_traders_vec[1].R)
     #     println("Total Reward = ", sum(rl_traders_vec[1].R))
-    #     println("Number of Actions = ", length(rl_traders_vec[1].R))
-    #     println("Trade Messages = ", rl_traders_vec[1].trade_messages)
+        println("Number of Actions = ", length(rl_traders_vec[1].R))
+    # println("Trade Messages = ", rl_traders_vec[1].trade_messages)
     #     println("Number of Trades = ", length(rl_traders_vec[1].trade_messages))
-    #     println()
-    # end
+    println()
+    end
 
     # return mid-prices and micro-prices, and if rl traded then return the Q matrices and rewards for the simulations
     if rlTraders # extend for multiple rl agents

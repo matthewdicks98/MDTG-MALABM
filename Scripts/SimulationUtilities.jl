@@ -158,9 +158,18 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Write messages -----# 
-function WriteMessages(initial_messages_received::Vector{String}, messages_received::Vector{String})
+function WriteMessages(initial_messages_received::Vector{String}, messages_received::Vector{String}, rl_training::Bool, iteration::Int64)
+
+    # choos the correct file path (if rl training then write messages to the rl training files)
+    messages_path = ""
+    if rl_training
+        messages_path = "/Data/CoinTossX/RawRLIteration" * string(iteration) * ".csv"
+    else
+        messages_path = "/Data/CoinTossX/Raw.csv"
+    end
+
     # open file and write
-    open(path_to_files * "/Data/CoinTossX/Raw.csv", "w") do file
+    open(path_to_files * messages_path, "w") do file
 
         # set the Header
         println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,ClientOrderId,Price,Volume")
