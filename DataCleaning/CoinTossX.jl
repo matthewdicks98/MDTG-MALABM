@@ -422,5 +422,5 @@ function VisualiseSimulation(taqPath::String, l1lobPath::String; format = "pdf",
 end
 #---------------------------------------------------------------------------------------------------
 
-CleanData("Raw", initialization = false)
-VisualiseSimulation("TAQ", "L1LOB")
+# CleanData("Raw", initialization = false)
+# VisualiseSimulation("TAQ", "L1LOB")

@@ -384,12 +384,12 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # println()
     # println()
     # println("Done = ", rlAgent.done)
-    if rlAgent.done
-        # println("Inventory Remaining = ", rlAgent.i)
-        return
-    end
+    # if rlAgent.done
+    #     println("Inventory Remaining = ", rlAgent.i)
+    #     return
+    # end
 
-    # process the RL messages to get traded volume (for inventory counter) and reward = Σpᵢvᵢ 
+    # process the RL messages to get traded volume (for the prev state and prev action combination) (for inventory counter) and reward = Σpᵢvᵢ 
     total_volume_traded, sum_price_volume, trade_message = ProcessMessages(simulationstate.rlMessages, rlAgent)
 
     if trade_message != ""
@@ -864,6 +864,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
                         # need 2 types (Type is the original one and type is the one that changes (crossing LOs))
                         trader = fields[3]
 
+                        # store the traders rl messages (change when add multiple)
                         if occursin("RL", trader)
                             push!(simulationstate.rlMessages, message)
                         end
@@ -945,7 +946,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     println()
     #     println("Rewards = ", rl_traders_vec[1].R)
     #     println("Total Reward = ", sum(rl_traders_vec[1].R))
-        println("Number of Actions = ", length(rl_traders_vec[1].R))
+        println("Number of Actions = ", length(rl_traders_vec[1].actions))
     # println("Trade Messages = ", rl_traders_vec[1].trade_messages)
     #     println("Number of Trades = ", length(rl_traders_vec[1].trade_messages))
     println()
