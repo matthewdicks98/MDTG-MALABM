@@ -146,7 +146,7 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
     parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
-    moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator"), ("Objective", "Objective Function")]
+    moments = [("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator"), ("Objective", "Objective Function")]
     for (i, (paramcol, paramlabel)) in enumerate(parameters)
         col = colors[i]
         for (momentcol, momentlabel) in moments
@@ -156,14 +156,14 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
                 params_sr, moments_sr = Winsorize(params_sr, moments_sr)
             end
             if paramcol == "Delta" || paramcol == "SigmaV"
-                p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
-                xlabel!(paramlabel, fontsize = 5)
-                ylabel!(momentlabel, fontsize = 5)
+                p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm)
+                # xlabel!(paramlabel, fontsize = 22)
+                # ylabel!(momentlabel, fontsize = 22)
                 # boxplot!((round.(params_sr, digits = 4)), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false, group = params_sr)
             else
-                p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
-                xlabel!(paramlabel, fontsize = 5)
-                ylabel!(momentlabel, fontsize = 5)
+                p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm)
+                # xlabel!(paramlabel, fontsize = 22)
+                # ylabel!(momentlabel, fontsize = 22)
                 # boxplot!(round.(params_sr, digits = 4), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false)
             end
             savefig(p, "../Images/SensitivityAnalysis/Violin/NoKurtosis/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")

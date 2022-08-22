@@ -129,7 +129,7 @@ function HistoricalDistributionsStates(numSpreadQuantiles::Int64, numVolumeQuant
     return spread_states_df, volume_states_df
 
 end
-# spread_states_df, volume_states_df = HistoricalDistributionsStates(5,5,false,false,1)
+# spread_states_df, volume_states_df = HistoricalDistributionsStates(5,5,false,false,true,1)
 #---------------------------------------------------------------------------------------------------
 
 #----- Return actions -----# 
@@ -337,7 +337,7 @@ function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Flo
     # get the action with the lowest (highest) value for selling (buying)
     a_star = nothing
     if rlAgent.actionType == "Sell" # want to maximize the profit
-        a_star = argmax(Q[state]) # change so that action 1 isnt always selected for a new state
+        a_star = argmax(Q[state]) 
     elseif rlAgent.actionType == "Buy" # want to mimimize the cost (might need to change)
         a_star = argmin(Q[state])
     end
@@ -444,7 +444,7 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
 
             # determine if you need to write the messages (always write first and last)
             if i % iterationsPerWrite == 0 || i == numEpisodes || i == 1
-                @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, false, false, seed = seed, iteration = i)
+                @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, true, false, seed = seed, iteration = i)
             else
                 @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, false, false, seed = seed, iteration = i)
             end           
@@ -505,7 +505,7 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
         Logout(gateway)
         StopCoinTossX()
         # write results to a file
-        # @time save(path_to_files * "/Data/RL/Training/Results.jld", "rl_results", rl_results)
+        @time save(path_to_files * "/Data/RL/Training/Results.jld", "rl_results", rl_results)
     end 
 
 end
@@ -548,7 +548,7 @@ end
 # discount_factor = 1 # used in Q update (discounts future rewards)
 # α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
 # initialQ = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A))
-# numDecisions = 430 # 450 each agent has approx 450 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
+# numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
 # Ntwap = V / numDecisions
 
 # rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α)

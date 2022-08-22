@@ -398,14 +398,14 @@ function VisualiseSimulation(taqPath::String, l1lobPath::String; format = "pdf",
     if typeof(imbalance[1]) == String31 || typeof(imbalance[1]) == String # imbalance can constain strings
         imbalance = parse.(Float64, imbalance)
     end
-    volumeImbalance = plot(orders.RelativeTime, imbalance, seriestype = :line, linecolor = :purple, xlabel = "Time (s)", ylabel = "Order Imbalance", label = "OrderImbalance", legend = :topleft, legendfontsize = 5, tickfontsize = 5, xrotation = 30, fg_legend = :transparent, right_margin = 8mm)
+    volumeImbalance = plot(orders.RelativeTime, imbalance, seriestype = :line, linecolor = :purple, xlabel = "Time (s)", ylabel = "Order imbalance", label = "Order imbalance", legend = :topleft, legendfontsize = 5, tickfontsize = 5, xrotation = 30, fg_legend = :transparent, right_margin = 8mm)
     plot!(twinx(), l1lob.RelativeTime, l1lob.Spread, seriestype = :steppost, linecolor = :orange, ylabel = "Spread", label = "Spread", legend = :topright, legendfontsize = 5, tickfontsize = 5, xaxis = false, xticks = false, fg_legend = :transparent)
     # Log-return plot
     filter!(x -> !ismissing(x.MidPrice), l1lob)
     logreturns = diff(log.(l1lob.MidPrice))
     returns = plot(l1lob.RelativeTime[2:end], logreturns, seriestype = :line, linecolor = :black, legend = false, tickfontsize = 5, ylabel = "Log-returns", xticks = false)
     l = @layout([a; b{0.2h}; c{0.2h}])
-    simulation = plot(bubblePlot, returns, volumeImbalance, layout = l, link = :x, guidefontsize = 7)
+    simulation = plot(bubblePlot, returns, volumeImbalance, layout = l, link = :x, guidefontsize = 7, fontfamily="Computer Modern")
     suffix = ""
     l1lobPath == "L1LOB" ? suffix = "" : suffix = l1lobPath[6:end]
     savefig(simulation, "../Images/CoinTossX/Simulation" * suffix * "." * format)

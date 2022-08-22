@@ -376,7 +376,7 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         return
     end
     current_time = Dates.now()
-    if !(current_time - simulationstate.start_time < simulationstate.parameters.T) # might also need to change if multiple sessions (assumes end of RL is always before end of sim)
+    if !(current_time - simulationstate.start_time < simulationstate.parameters.T) 
         return
     end
 
@@ -864,7 +864,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
                         # need 2 types (Type is the original one and type is the one that changes (crossing LOs))
                         trader = fields[3]
 
-                        # store the traders rl messages (change when add multiple)
+                        # store the traders rl messages (change when add multiple) (think this might have been fixed in the RLUtilities process messages file)
                         if occursin("RL", trader)
                             push!(simulationstate.rlMessages, message)
                         end
@@ -943,13 +943,13 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     #     end
     #     println()
 
-    println()
+        println()
     #     println("Rewards = ", rl_traders_vec[1].R)
     #     println("Total Reward = ", sum(rl_traders_vec[1].R))
         println("Number of Actions = ", length(rl_traders_vec[1].actions))
     # println("Trade Messages = ", rl_traders_vec[1].trade_messages)
     #     println("Number of Trades = ", length(rl_traders_vec[1].trade_messages))
-    println()
+        println()
     end
 
     # return mid-prices and micro-prices, and if rl traded then return the Q matrices and rewards for the simulations

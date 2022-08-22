@@ -1,5 +1,5 @@
 ENV["JULIA_COPY_STACKS"]=1
-using DataFrames, CSV, Plots, Statistics, DataStructures, JLD, Plots.PlotMeasures
+using DataFrames, CSV, Plots, Statistics, DataStructures, JLD, Plots.PlotMeasures, LaTeXStrings
 
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 include(path_to_files * "Scripts/Moments.jl"); include(path_to_files * "DataCleaning/CoinTossX.jl")
@@ -31,12 +31,12 @@ function EpsilonDecay(steps::Vector{Int64}, sizes::Vector{Float64})
         end  
         push!(xs, max(x,0))
     end
-    p = plot(xs, xlabel = "Episodes", ylabel = "ϵ", color = :black, legend = false)
+    p = plot(xs, xlabel = "Episodes", ylabel = L"\epsilon", color = :black, legend = false, fontfamily="Computer Modern")
     savefig(p, path_to_files * "/Images/RL/EpsilonDecay.pdf")
 end
-steps = [200, 400, 150, 250] 
-sizes = [0.1, 0.8, 0.09, 0]
-EpsilonDecay(steps, sizes)
+# steps = [200, 400, 150, 250] 
+# sizes = [0.1, 0.8, 0.09, 0]
+# EpsilonDecay(steps, sizes)
 #---------------------------------------------------------------------------------------------------
 
 #----- Plot the RL training results -----# 
@@ -69,7 +69,7 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             push!(rewards10, l10[i]["TotalReward"])
         end
 
-        V == 100 ? ylab = "Volume Normalized Total Profit" : ylab = ""
+        V == 100 ? ylab = "Inventory Normalized Total Profit" : ylab = ""
 
         if V == 200 # used to add winsorization
 
@@ -77,15 +77,15 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             rewards5 = rewards5[findall(x -> x < quantile(rewards5, 0.99) && x > quantile(rewards5, 0.01), rewards5)]
             rewards10 = rewards10[findall(x -> x < quantile(rewards10, 0.99) && x > quantile(rewards10, 0.01), rewards10)]
 
-            p = plot(rewards5 ./ (V * 430), fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = "Volume = " * string(V * 430), titlefontsize = 6, label = "T,I,S,V = 5", legendfontsize = 4, fg_legend = :transparent)
-            plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = "Volume = " * string(V * 430), titlefontsize = 6, label = "T,I,S,V = 10", legendfontsize = 4, fg_legend = :transparent)
-            hline!([10000], linecolor = :black, label = "m₀", linestyle = :dash)
+            p = plot(rewards5 ./ (V * 430), fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$", legendfontsize = 4, fg_legend = :transparent, fontfamily="Computer Modern")
+            plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$", legendfontsize = 4, fg_legend = :transparent)
+            hline!([10000], linecolor = :black, label = raw"$\mathrm{m_{0}}$", linestyle = :dash)
 
             # hline!([V * 450 * 10000], linecolor = :black, label = "IS", linestyle = :dash)
         else
-            p = plot(rewards5 ./ (V * 430), fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = "Volume = " * string(V * 430), titlefontsize = 6, label = "T,I,S,V = 5", legendfontsize = 4, fg_legend = :transparent)
-            plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = "Volume = " * string(V * 430), titlefontsize = 6, label = "T,I,S,V = 10", legendfontsize = 4, fg_legend = :transparent)
-            hline!([10000], linecolor = :black, label = "m₀", linestyle = :dash)
+            p = plot(rewards5 ./ (V * 430), fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$", legendfontsize = 4, fg_legend = :transparent, fontfamily="Computer Modern")
+            plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$", legendfontsize = 4, fg_legend = :transparent)
+            hline!([10000], linecolor = :black, label = raw"$\mathrm{m_{0}}$", linestyle = :dash)
 
             # hline!([V * 450 * 10000], linecolor = :black, label = "IS", linestyle = :dash)
         end
@@ -93,7 +93,7 @@ function PlotRLConvergenceResults(actionsMap::Dict)
         push!(reward_plots, p)
     end
 
-    reward_plot = plot(reward_plots..., layout = grid(3,1), guidefontsize = 5, tickfontsize = 5)
+    reward_plot = plot(reward_plots..., layout = grid(3,1), guidefontsize = 5, tickfontsize = 5, fontfamily="Computer Modern")
     savefig(reward_plot, path_to_files * "/Images/RL/RewardConvergence430.pdf")
 
     # plot the convergence in the number of states and trades
@@ -115,27 +115,27 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             push!(num_trades_dict, string(num_state) * "_" * string(V) => num_trades)
         end
     end
-    # #plot the number of states convergence
+    # #plot the number of states convergence 
     # num_states_plots = plot(1:length(num_states_dict["5_100"]), num_states_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", legend = :bottomleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# States (T,I,B,W = 5)", title = "# States per Episode", right_margin = 12mm)
 
-    num_states_plots = plot(1:length(num_states_dict["5_200"]), num_states_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = "T,I,S,V = 5, Volume = " * string(200 * 430), legend = :bottomleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# States (T,I,S,V = 5)", legendfontsize = 7, right_margin = 15mm)
-    plot!(1:length(num_states_dict["5_100"]), num_states_dict["5_100"], fillcolor = :red, linecolor = :red, label = "T,I,S,V = 5, Volume = " * string(100 * 430), legend = :bottomleft, fg_legend = :transparent)
-    plot!(1:length(num_states_dict["5_50"]), num_states_dict["5_50"], fillcolor = :green, linecolor = :green, label = "T,I,S,V = 5, Volume = " * string(50 * 430), legend = :bottomleft, fg_legend = :transparent)
+    num_states_plots = plot(1:length(num_states_dict["5_200"]), num_states_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = raw"# States ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$)", legendfontsize = 8, right_margin = 15mm, fontfamily="Computer Modern")
+    plot!(1:length(num_states_dict["5_100"]), num_states_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
+    plot!(1:length(num_states_dict["5_50"]), num_states_dict["5_50"], fillcolor = :green, linecolor = :green, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
     subplot = twinx()
-    plot!(subplot, 1:length(num_states_dict["10_200"]), num_states_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = "T,I,S,V = 10, Volume = " * string(200 * 430), ylabel = "# States (T,I,S,V = 10)", legend = :bottomright, fg_legend = :transparent, legendfontsize = 7)
-    plot!(subplot, 1:length(num_states_dict["10_100"]), num_states_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = "T,I,S,V = 10, Volume = " * string(100 * 430), legend = :bottomright, fg_legend = :transparent)
-    plot!(subplot, 1:length(num_states_dict["10_50"]), num_states_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = "T,I,S,V = 10, Volume = " * string(50 * 430), legend = :bottomright, fg_legend = :transparent)
+    plot!(subplot, 1:length(num_states_dict["10_200"]), num_states_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", ylabel = raw"# States ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$)", legend = :bottomright, fg_legend = :transparent, legendfontsize = 8)
+    plot!(subplot, 1:length(num_states_dict["10_100"]), num_states_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
+    plot!(subplot, 1:length(num_states_dict["10_50"]), num_states_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
     savefig(num_states_plots, path_to_files * "/Images/RL/NumberStatesConvergence430.pdf")
 
     # # plot the number of trades convergence
     # num_states_plots = plot(1:length(num_trades_dict["5_100"]), num_trades_dict["5_100"], fillcolor = :magenta, linecolor = :magenta, label = "T,I,B,W = 10, Volume = 200", legend = :bottomright, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# Trades", title = "# Trades per Episode")
     
-    num_trades_plots = plot(1:length(num_trades_dict["10_200"]), num_trades_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = "T,I,S,V = 10, Volume = " * string(200 * 430), legend = :bottomright, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# Trades")
-    plot!(1:length(num_trades_dict["10_100"]), num_trades_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = "T,I,S,V = 10, Volume = " * string(100 * 430), legend = :bottomright, fg_legend = :transparent)
-    plot!(1:length(num_trades_dict["10_50"]), num_trades_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = "T,I,S,V = 10, Volume = " * string(50 * 430), legend = :bottomright, fg_legend = :transparent)
-    plot!(1:length(num_trades_dict["5_200"]), num_trades_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = "T,I,S,V = 5, Volume = " * string(200 * 430), legend = :bottomleft, fg_legend = :transparent)
-    plot!(1:length(num_trades_dict["5_100"]), num_trades_dict["5_100"], fillcolor = :red, linecolor = :red, label = "T,I,S,V = 5, Volume = " * string(100 * 430), legend = :bottomleft, fg_legend = :transparent)
-    plot!(1:length(num_trades_dict["5_50"]), num_trades_dict["5_50"], fillcolor = :green, linecolor = :green, label = "T,I,S,V = 5, Volume = " * string(50 * 430), legend = :bottomleft, fg_legend = :transparent)
+    num_trades_plots = plot(1:length(num_trades_dict["10_200"]), num_trades_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent, legendfontsize = 8, xlabel = "Episodes", ylabel = "# Trades", fontfamily="Computer Modern")
+    plot!(1:length(num_trades_dict["10_100"]), num_trades_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
+    plot!(1:length(num_trades_dict["10_50"]), num_trades_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
+    plot!(1:length(num_trades_dict["5_200"]), num_trades_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
+    plot!(1:length(num_trades_dict["5_100"]), num_trades_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
+    plot!(1:length(num_trades_dict["5_50"]), num_trades_dict["5_50"], fillcolor = :green, linecolor = :green, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
     savefig(num_trades_plots, path_to_files * "/Images/RL/NumberTradesConvergence430.pdf")
 
     # convergence of policy (difference between best action in each state in consecutive iterations)
@@ -161,12 +161,12 @@ function PlotRLConvergenceResults(actionsMap::Dict)
     end
     # policy_diffs_plots = plot(1:length(policy_diffs_dict["5_100"]), policy_diffs_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", fg_legend = :transparent, xlabel = "Episodes", ylabel = "Policy Differences", title = "1 Step Policy Differences")
 
-    policy_diffs_plots = plot(1:length(policy_diffs_dict["5_200"]), policy_diffs_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = "T,I,S,V = 5, Volume = " * string(200 * 430), fg_legend = :transparent, xlabel = "Episodes", ylabel = "One Step Policy Difference")
-    plot!(1:length(policy_diffs_dict["5_100"]), policy_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = "T,I,S,V = 5, Volume = " * string(100 * 430))
-    plot!(1:length(policy_diffs_dict["5_50"]), policy_diffs_dict["5_50"], fillcolor = :green, linecolor = :green, label = "T,I,S,V = 5, Volume = " * string(50 * 430))
-    plot!(1:length(policy_diffs_dict["10_200"]), policy_diffs_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = "T,I,S,V = 10, Volume = " * string(200 * 430))
-    plot!(1:length(policy_diffs_dict["10_100"]), policy_diffs_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = "T,I,S,V = 10, Volume = " * string(100 * 430))
-    plot!(1:length(policy_diffs_dict["10_50"]), policy_diffs_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = "T,I,S,V = 10, Volume = " * string(50 * 430))
+    policy_diffs_plots = plot(1:length(policy_diffs_dict["5_200"]), policy_diffs_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", fg_legend = :transparent, legendfontsize = 8, xlabel = "Episodes", ylabel = "One Step Policy Difference", fontfamily="Computer Modern")
+    plot!(1:length(policy_diffs_dict["5_100"]), policy_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$")
+    plot!(1:length(policy_diffs_dict["5_50"]), policy_diffs_dict["5_50"], fillcolor = :green, linecolor = :green, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(50 * 430) * raw"}$")
+    plot!(1:length(policy_diffs_dict["10_200"]), policy_diffs_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(200 * 430) * raw"}$")
+    plot!(1:length(policy_diffs_dict["10_100"]), policy_diffs_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(100 * 430) * raw"}$")
+    plot!(1:length(policy_diffs_dict["10_50"]), policy_diffs_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$")
     savefig(policy_diffs_plots, path_to_files * "/Images/RL/PolicyConvergence430.pdf")
 
     # convergence of Q (difference between best action in each state in consecutive iterations)
@@ -191,13 +191,13 @@ function PlotRLConvergenceResults(actionsMap::Dict)
     end
     # q_diffs_plots = plot(1:length(q_diffs_dict["5_100"]), q_diffs_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", legend = :topleft, fg_legend = :transparent, legendfontsize = 4, guidefontsize = 5, tickfontsize = 5, xlabel = "Episodes", ylabel = "Q-matrix Differences (T,I,B,W = 5)", title = "1 Step Q-matrix Policy Differences", right_margin = 18mm)
     
-    q_diffs_plots = plot(1:length(q_diffs_dict["5_200"]), q_diffs_dict["5_200"], ylims = (0, 150000), fillcolor = :blue, linecolor = :blue, label = "T,I,S,V = 5, Volume = " * string(200 * 430), legend = :topleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = "One Step Q-matrix Difference (T,I,S,V = 5)", legendfontsize = 6, guidefontsize = 8, tickfontsize = 7, right_margin = 25mm)
-    plot!(1:length(q_diffs_dict["5_100"]), q_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = "T,I,S,V = 5, Volume = " * string(100 * 430), legend = :topleft, fg_legend = :transparent)
-    plot!(1:length(q_diffs_dict["5_50"]), q_diffs_dict["5_50"], fillcolor = :green, linecolor = :green, label = "T,I,S,V = 5, Volume = " * string(50 * 430), legend = :topleft, fg_legend = :transparent)
+    q_diffs_plots = plot(1:length(q_diffs_dict["5_200"]), q_diffs_dict["5_200"], ylims = (0, 150000), fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :topleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = raw"One Step Q-matrix Difference ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$)", legendfontsize = 6, guidefontsize = 8, tickfontsize = 7, right_margin = 25mm, fontfamily="Computer Modern")
+    plot!(1:length(q_diffs_dict["5_100"]), q_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :topleft, fg_legend = :transparent)
+    plot!(1:length(q_diffs_dict["5_50"]), q_diffs_dict["5_50"], fillcolor = :green, linecolor = :green, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :topleft, fg_legend = :transparent)
     subplot = twinx()
-    plot!(subplot, 1:length(q_diffs_dict["10_200"]), q_diffs_dict["10_200"], ylims = (0, 13000), fillcolor = :magenta, linecolor = :magenta, label = "T,I,S,V = 10, Volume = " * string(200 * 430), legend = :topright, fg_legend = :transparent, ylabel = "One Step Q-matrix Difference (T,I,S,V = 10)", legendfontsize = 6, guidefontsize = 8, tickfontsize = 7)
-    plot!(subplot, 1:length(q_diffs_dict["10_100"]), q_diffs_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = "T,I,S,V = 10, Volume = " * string(100 * 430), legend = :topright, fg_legend = :transparent)
-    plot!(subplot, 1:length(q_diffs_dict["10_50"]), q_diffs_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = "T,I,S,V = 10, Volume = " * string(50 * 430), legend = :topright, fg_legend = :transparent)
+    plot!(subplot, 1:length(q_diffs_dict["10_200"]), q_diffs_dict["10_200"], ylims = (0, 13000), fillcolor = :magenta, linecolor = :magenta, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :topright, fg_legend = :transparent, ylabel = raw"One Step Q-matrix Difference ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$)", legendfontsize = 6, guidefontsize = 8, tickfontsize = 7)
+    plot!(subplot, 1:length(q_diffs_dict["10_100"]), q_diffs_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :topright, fg_legend = :transparent)
+    plot!(subplot, 1:length(q_diffs_dict["10_50"]), q_diffs_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :topright, fg_legend = :transparent)
     savefig(q_diffs_plots, path_to_files * "/Images/RL/QConvergence430.pdf")
 
 end
@@ -229,21 +229,21 @@ function StateActionConvergence(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int
         push!(actions_dict, state => actions)
     end
 
-    p = plot(actions_dict[max_states[1]], legend = false, xlabel = "Episodes", ylabel = "Actions", title = "T,I,S,V = " * string(numT) * " (Volume = " * string(430 * V) * ")", titlefontsize = 11, yticks = [-1;collect(range(0,2,9))])
+    p = plot(actions_dict[max_states[1]], legend = false, xlabel = "Episodes", ylabel = "Actions", fontfamily = "Computer Modern", title = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V}} = {" * string(numT) * raw"} \;\; (\mathrm{X_{0}} = {" * string(430 * V) * raw"})$", titlefontsize = 11, yticks = [-1;collect(range(0,2,9))])
     for i in 2:length(max_states)
         plot!(actions_dict[max_states[i]])
     end
     savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/StateActionConvergence_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
 end
-# A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
-# maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
-# actions = GenerateActions(A, maxVolunmeIncrease)
-# numT = I = B = W = 10                    # number of time, inventory, spread, volume states 
-# V = 200
-# @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
-# n = length(l)
-# StateActionConvergence(l, numT, I, B, W, A, V, actions)
+A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
+maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
+actions = GenerateActions(A, maxVolunmeIncrease)
+numT = I = B = W = 5                    # number of time, inventory, spread, volume states 
+V = 50
+@time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+n = length(l)
+StateActionConvergence(l, numT, I, B, W, A, V, actions)
 # #---------------------------------------------------------------------------------------------------
 
 #----- Given a Q-matrix get the greedy policy -----# 
@@ -262,8 +262,8 @@ function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64,
     P = GetPolicy(Q)
     plots = []
     inc = 1
-    for i in 5:-1:1 # i in I:-1:1 # want volume to increase upwards in plot
-        for t in 5:-1:1 # t in numT:-1:1 # want time remaining to decrease left to right
+    for i in I:-1:1 # i in I:-1:1 # want volume to increase upwards in plot
+        for t in numT:-1:1 # t in numT:-1:1 # want time remaining to decrease left to right
             # create a matrix that will store values for spread and volume states
             M = fill(0.0,B,W)
             s_counter = 1
@@ -295,7 +295,7 @@ function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64,
     l = @layout[a{0.05w} grid(5,5); b{0.001h}]
     colorbar = heatmap([-1;getindex.(Ref(actionsMap), 1:A)].*ones(A+1,1), title = "Actions", titlefontsize = 7, ylabel = "Inventory", ymirror = true, guidefontsize = 10, tickfontsize = 5, c = cgrad(:seismic, [0, 0.50, 0.78, 1]), legend=:none, xticks=:none, yticks=(1:1:(A+1), string.([-1;getindex.(Ref(actionsMap), 1:A)])), y_foreground_color_axis=:white, y_foreground_color_border=:white)
     empty = plot(title = "Time", titlefontsize = 10, legend=false,grid=false, foreground_color_axis=:white, foreground_color_border=:white, ticks = :none)
-    p = plot(colorbar, plots..., empty, layout = l)
+    p = plot(colorbar, plots..., empty, layout = l, fontfamily = "Computer Modern")
     savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/PolicyPlot_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
 end
@@ -515,32 +515,32 @@ function PlotAverageActionsOverTime(l::Dict, numT::Int64, I::Int64, B::Int64, W:
     numT == 5 ? legend_symbol = Symbol("topright") : legend_symbol = Symbol("bottomleft")
 
     # plot the volume  
-    v = plot(avg_actions_highvol, label = "High Volume", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
+    v = plot(avg_actions_highvol, label = "High Volume", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowvol, label = "Low Volume", color = :red, fg_legend = :transparent)
     savefig(v, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the spread
-    s = plot(avg_actions_lowspr, label = "Low Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
-    plot!(avg_actions_highspr, label = "High Spread", color = :red, fg_legend = :transparent)
+    s = plot(avg_actions_lowspr, label = "Narrow Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
+    plot!(avg_actions_highspr, label = "Wide Spread", color = :red, fg_legend = :transparent)
     savefig(s, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionSpread_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the time
-    t = plot(avg_actions_hightime, label = "More remaining time", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
+    t = plot(avg_actions_hightime, label = "More remaining time", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowtime, label = "Less remaining time", color = :red, fg_legend = :transparent)
     savefig(t, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionTime_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the inventory
-    i = plot(avg_actions_highinv, label = "More remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
+    i = plot(avg_actions_highinv, label = "More remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowinv, label = "Less remaining inventory", color = :red, fg_legend = :transparent)
     savefig(i, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the spread vs volume interaction 
-    sv = plot(avg_actions_highvol_lowspr, label = "High Volume, Low Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
-    plot!(avg_actions_lowvol_highspr, label = "Low Volume, High Spread", color = :red, fg_legend = :transparent)
+    sv = plot(avg_actions_highvol_lowspr, label = "High Volume, Narrow Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
+    plot!(avg_actions_lowvol_highspr, label = "Low Volume, Wide Spread", color = :red, fg_legend = :transparent)
     savefig(sv, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionSpreadVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the time and inventory interactions
-    ti = plot(avg_actions_hightime_highinv, label = "More remaining time, more remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = "Volume = " * string(430 * V) * " (T,I,S,V = " * string(numT) * ")", titlefontsize = 11)
+    ti = plot(avg_actions_hightime_highinv, label = "More remaining time, more remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowtime_lowinv, label = "Less remaining time, less remaining inventory", color = :red, fg_legend = :transparent)
     savefig(ti, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionTimeInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
@@ -564,7 +564,7 @@ function PlotVolumeTragectory(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64
     for action in l[1]["Actions"]
         push!(actions1, action)
     end
-    pi1 = plot(1:l[1]["NumberActions"], getindex.(Ref(actionsMap), actions1) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = "Iteration 1 (T,I,S,V = " * string(numT) * " Volume = " * string(430 * V) * ")", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
+    pi1 = plot(1:l[1]["NumberActions"], getindex.(Ref(actionsMap), actions1) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = raw"Episode 1 ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
     # savefig(pi1, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/ActionsIteration_1_V" * string(V) * "_S" * string(numT) * "_430.pdf")
     
     actionsN = Vector{Float64}()
@@ -572,9 +572,9 @@ function PlotVolumeTragectory(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64
     for action in l[n]["Actions"]
         push!(actionsN, action)
     end
-    piN = plot(1:l[n]["NumberActions"], getindex.(Ref(actionsMap), actionsN) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = "Iteration " * string(n) * " (T,I,S,V = " * string(numT) * " Volume = " * string(430 * V) * ")", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
+    piN = plot(1:l[n]["NumberActions"], getindex.(Ref(actionsMap), actionsN) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = raw"Episode " * string(n) * raw" ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
     l = @layout([a; b])
-    p = plot(pi1, piN, layout = l)
+    p = plot(pi1, piN, layout = l, fontfamily = "Computer Modern")
     savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/ActionVolumeIteration_" * string(n) * "_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 end
 # A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
@@ -623,11 +623,13 @@ function GetSimulatedMidMicroPrices(cleanDirPath::String, rawDataFilePath::Strin
     raw_data_dir = join(split(rawDataFilePath,"/")[1:(end-1)], "/")
     run(`mv $l1lob_file_path $raw_data_dir`)
 
-    # delete depth profile, TAQ data and Raw data file from cleaning directory
+    # move depth profile data to original directory
     depth_file_path = cleanDirPath * "/DepthProfileDataRLIteration" * string(iteration) *".csv"
+    run(`mv $depth_file_path $raw_data_dir`)
+
+    # delete depth profile, TAQ data and Raw data file from cleaning directory
     taq_file_path =  cleanDirPath * "/TAQRLIteration" * string(iteration) *".csv"
     raw_file_path = cleanDirPath * "/RawRLIteration" * string(iteration) *".csv"
-    run(`rm $depth_file_path`)
     run(`rm $taq_file_path`)
     run(`rm $raw_file_path`)
 
@@ -680,14 +682,14 @@ function PlotStylisedFactDynamics(empiricalLogReturns::DataFrame, moments::Vecto
     colors = [:green, :magenta, :purple, :orange, :lightgreen, :grey9]
     for i in 1:nrow(abmMomentsdf)
         color_count = 1
-        p = plot(iterations, round.(stylised_fact_data["50_5"][moments[i]], digits = 3), size = (800, 400), ylabel = moments[i], color = colors[color_count], label = "RL (Vol = " * string(430 * 50) * " T,I,S,V = " * string(5) * ")", xlabel = "Iterations", marker = :circle, markerstrokewidth = 0, markersize = 3, legend = :outertopright, legendfontsize = 7, fg_legend = :transparent, titlefontsize = 11, left_margin = 5mm, bottom_margin = 5mm)
+        p = plot(iterations, round.(stylised_fact_data["50_5"][moments[i]], digits = 3), size = (800, 400), ylabel = moments[i], color = colors[color_count], label = raw"RL ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(5) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * 50) * raw"}$)", xlabel = "Iterations", marker = :circle, markerstrokewidth = 0, markersize = 3, legend = :outertopright, legendfontsize = 7, fg_legend = :transparent, titlefontsize = 11, left_margin = 5mm, bottom_margin = 5mm, fontfamily = "Computer Modern")
         for V in Vs
             for num_state in num_states
                 if V == 50 && num_state == 5
                     color_count += 1
                     continue
                 else
-                    plot!(iterations, round.(stylised_fact_data[string(V) * "_" * string(num_state)][moments[i]], digits = 3), size = (800, 400), ylabel = moments[i], color = colors[color_count], label = "RL (Vol = " * string(430 * V) * " T,I,S,V = " * string(num_state) * ")", xlabel = "Iterations", marker = :circle, markerstrokewidth = 0, markersize = 3, legend = :outertopright, legendfontsize = 7, fg_legend = :transparent, titlefontsize = 11, left_margin = 5mm, bottom_margin = 5mm)
+                    plot!(iterations, round.(stylised_fact_data[string(V) * "_" * string(num_state)][moments[i]], digits = 3), size = (800, 400), ylabel = moments[i], color = colors[color_count], label = raw"RL ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(num_state) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", xlabel = "Iterations", marker = :circle, markerstrokewidth = 0, markersize = 3, legend = :outertopright, legendfontsize = 7, fg_legend = :transparent, titlefontsize = 11, left_margin = 5mm, bottom_margin = 5mm)
                 end
                 color_count += 1
             end
