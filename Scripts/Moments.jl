@@ -1,7 +1,7 @@
 #=
 Moments:
 - Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some optimisations made by Matthew Dicks)
 - Function: Compute moments of mid-price time-series
 - Structure:
     1. Moments structure
@@ -18,7 +18,7 @@ import Logging
 Logging.disable_logging(Logging.Warn) # for ties warning in the estimation of the KS statistic
 #---------------------------------------------------------------------------------------------------
 
-#----- Get the upper quantile -----#
+#----- Get the upper quantile -----# (optimise the finding of the quantiles)
 function GetUpperQuantile(x, p)
     s = sort(x, rev = true)
     q = quantile(x, p)

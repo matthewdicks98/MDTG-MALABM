@@ -1,3 +1,36 @@
+#=
+ReactiveABM:
+- Julia version: 1.7.1
+- Authors: Matthew Dicks, Tim Gebbie, (some code was adapted from https://github.com/IvanJericevich/IJPCTG-ABMCoinTossX)
+- Function: Functions used to simulate the event based ABM with a maximum of 1 RL selling agent
+- Structure: 
+    1. Market data listener (asynchronous method)
+    2. Structures
+    3. Agent specifications 
+        i. High frequency liquidity providers
+        ii. Chartists
+        iii. Fundamentalists 
+        iv. RL selling agent
+    4. Rocket actor definitions
+    5. Rocket subject definitions
+    6. Updating of model management systems LOB
+    7. Initialisation of the LOB
+    8. Simulation
+- Example:
+    StartJVM()
+    gateway = Login(1,1)
+    seed = 1
+    parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
+    rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α)
+    print_and_plot = false                    
+    write = false 
+    rlTraders = true                        
+    rlTraining = true                       
+    @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, true, false, seed = seed, iteration = i)
+    Logout(gateway)
+- Prerequisites:
+    1. CoinTossX is running
+=#
 ENV["JULIA_COPY_STACKS"]=1
 using JavaCall, Rocket, Sockets, Random, Dates, Distributions, Plots, CSV, DataFrames, DataStructures, StatsBase
 import Rocket.scheduled_next!
@@ -14,7 +47,7 @@ function Listen(receiver, messages_chnl, messages_received)
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            # println("------------------- Port: " * message_loc_time) # keep for testing ############################## Add Print back here and to client in CoinTossX
+            println("------------------- Port: " * message_loc_time)
         end
     catch e
         if e isa EOFError
@@ -128,16 +161,12 @@ mutable struct RL <: Actor{SimulationState}
     actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
     trade_messages::Vector{String}    # store all the messages when the agent made a trade
     actions::Vector{Int64}            # store all the actions the agent took
-
     actionType::String     # defines if the agent will be buying or selling
-    
     t::Int64               # time remaining
     i::Int64               # inventory remaining/getting             
     done::Bool             # indicates if the trader has traded all the volume
-
     R::Vector{Float64}   # rewards stored over the course of a single execution
     Q::DefaultDict       # is the Q matrix for the RL agent for a single execution (only add a state-action pair when it is seen for the first time, don't initialize full Q)
-
     prev_state::Vector{Int64}     # stores the previous state for updating of Q
     prev_action::Int64          # stores the previous action for updating of Q
 end
@@ -147,7 +176,6 @@ include(path_to_files * "Scripts/SimulationUtilities.jl") # have to include here
 
 #----- Agent rules -----# 
 function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::SimulationState)
-    # TODO: Cancellations
 
     # do not trade if trading time is finished
     if !(simulationstate.initializing)
@@ -226,15 +254,12 @@ function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::
         # if initializing do not allow agents to submit an order in the spread
         if (order.price > simulationstate.LOB.aₜ) || (order.price < simulationstate.LOB.bₜ)
             SubmitOrder(simulationstate.gateway, order)
-            #current_time = Dates.now()
-            #push!(highfrquency.currentOrders, (current_time, order))
             simulationstate.event_counter += 1
         end
     end
     
 end
 function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
-    # TODO: 
 
     # if the order book is being initialized do nothing
     if simulationstate.initializing 
@@ -301,11 +326,6 @@ function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
 end
 
 function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::SimulationState)
-    # TODO: (1) Check the generation of the mid-price
-
-    # if (event_counter > max_events + number_initial_messages)
-    #     return
-    # end
 
     # if the order book is being initialized do nothing
     if simulationstate.initializing 
@@ -380,15 +400,6 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         return
     end
 
-    # if the agent has traded all the volume before the simulation is up don't trade 
-    # println()
-    # println()
-    # println("Done = ", rlAgent.done)
-    # if rlAgent.done
-    #     println("Inventory Remaining = ", rlAgent.i)
-    #     return
-    # end
-
     # process the RL messages to get traded volume (for the prev state and prev action combination) (for inventory counter) and reward = Σpᵢvᵢ 
     total_volume_traded, sum_price_volume, trade_message = ProcessMessages(simulationstate.rlMessages, rlAgent)
 
@@ -399,15 +410,10 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # get the remaining volume (need the RL messages)
     rlAgent.i = rlAgent.i - total_volume_traded
 
-    # println("Volume Traded = ", total_volume_traded)
-    # println("Inventory Remaining = ", rlAgent.i)
-    # println("Σpᵢvᵢ = ", sum_price_volume)
-
     # get remaining time (will need to change if we use more than 1 execution per day), also need to add that entire reamining volume must be traded
     rl_start_time = (simulationstate.start_time + simulationstate.rlParameters.startTime)
     rl_end_time = (rl_start_time + simulationstate.rlParameters.T)
     remaining_time = (rl_end_time - current_time).value
-    # println("Remaining Time = ", remaining_time)
 
     # get the new state
     state, done = GetState(simulationstate.LOB, remaining_time, rlAgent.i, simulationstate.rlParameters, rlAgent)
@@ -431,13 +437,9 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         end
     end
 
-    # println("State = ", state)
-    # println("Terminal = ", rlAgent.done)
-
     # update Q only if an action has been taken in the sim (so after the first iteration of the event loop)
     # note argmax for selling and argmin for buying agents
     if rlAgent.prev_action >= 0
-        # rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] += 1
         rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] = rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] + simulationstate.rlParameters.α * (reward + simulationstate.rlParameters.discount_factor * maximum(rlAgent.Q[state]) - rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action])
     end
 
@@ -445,8 +447,6 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     policy_probabilities = EpisilonGreedyPolicy(rlAgent.Q, state, simulationstate.rlParameters.ϵ, rlAgent)
     action = sample(Xoshiro(), 1:simulationstate.rlParameters.A, Weights(policy_probabilities), 1)[1] # supply a different rng than the global one so for the same price path different actions can be generated
     action_percentage_volume = simulationstate.rlParameters.actions[action]
-    # action = rand([1, 2])
-    # action_percentage_volume = simulationstate.rlParameters.actions[action]
 
     # add the store the rewards 
     if rlAgent.prev_action >= 0 
@@ -456,7 +456,6 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # check remaining time and if non-left trade everything and not in terminal state
     if remaining_time <= 0
         if !(rlAgent.done)
-            # println("State = ", state, " | Prev State = ", rlAgent.prev_state)
             action = simulationstate.rlParameters.A
             action_percentage_volume = 2 
         elseif (rlAgent.done) # if time is up and we are in terminal then dont trade
@@ -504,12 +503,6 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     rlAgent.prev_state = state
     rlAgent.prev_action = action
 
-    # println("Action = ", action)
-    # println("Action Percentage Volume = ", action_percentage_volume)
-    # println("Action Volume = ", order.volume)
-    # println("Contra = ", contra)
-    # println("Volatility = ", volatility)
-
     return
 
 end
@@ -517,7 +510,6 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Define How Subject Passes Messages to Actors -----#
-
 function nextState(subject::Subject, simulationstate::SimulationState)
     not_activated = Vector{Any}()
     for listener in subject.listeners
@@ -529,7 +521,6 @@ function nextState(subject::Subject, simulationstate::SimulationState)
         filter!(x -> x != listener, not_activated)
     end
 end
-
 #---------------------------------------------------------------------------------------------------
 
 #----- Define Actor Actions -----#
@@ -675,7 +666,6 @@ end
 
 #----- Initialize LOB -----#
 function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel, source::Subject, number_initial_messages::Int64, initial_messages_received::Vector{String}, messages_received::Vector{String})
-    # TODO (1) Write initial orders to a file
 
     # always leave a message in the channel so that when the sim starts agents have an event to trade off
     
@@ -741,10 +731,8 @@ function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel,
 end
 #---------------------------------------------------------------------------------------------------
 
-###################### Tommorow
-#                      (1) 
+#----- Simulate the event based ABM (1 RL selling agent can be added) -----#
 function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::TradingGateway, rlTraders::Bool, rlTraining::Bool, print_and_plot::Bool, write_messages::Bool, write_volume_spread::Bool; seed::Int64, iteration::Int64)
-    # TODO: Refactor  
 
     initial_messages_received = Vector{String}() # stores all initialization messages
     messages_received = Vector{String}()         # stores all messages after initialization
@@ -809,7 +797,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
-    # println("\n#################################################################### Initialization Started\n")
+    println("\n#################################################################### Initialization Started\n")
 
     # global initializing = true
     number_initial_messages = 1001
@@ -824,17 +812,13 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         UpdateRunningTotals(running_totals, parameters.Nᴸₜ, parameters.Nᴸᵥ, simulationstate.LOB.bₜ, simulationstate.LOB.aₜ, char_traders_vec, fun_traders_vec, simulationstate.LOB.ρₜ, simulationstate.LOB.sₜ, simulationstate.LOB.asks, simulationstate.LOB.bids)
     end
 
-    # println("\n#################################################################### Initialization Done\n")
+    println("\n#################################################################### Initialization Done\n")
 
     #----- Event Loop -----#
-
-    # currently only 1 message from the channel can be processed in a
-    # single loop takes about 0.006 seconds (maybe even less)
 
     # get the current time to use for while loop (causes the first HF trade to be a bit before the LF traders but after it seems fine)
     simulationstate.start_time = Dates.now()
 
-    #Dates.now() - current_time <= parameters.T
     try
         @time while true
             
@@ -937,18 +921,8 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     end
 
     if rlTraders
-        # println()
-    #     for key in keys(rl_traders_vec[1].Q)
-    #         println(key, " => ", rl_traders_vec[1].Q[key], " | Total actions = ", sum(rl_traders_vec[1].Q[key]))
-    #     end
-    #     println()
-
         println()
-    #     println("Rewards = ", rl_traders_vec[1].R)
-    #     println("Total Reward = ", sum(rl_traders_vec[1].R))
         println("Number of Actions = ", length(rl_traders_vec[1].actions))
-    # println("Trade Messages = ", rl_traders_vec[1].trade_messages)
-    #     println("Number of Trades = ", length(rl_traders_vec[1].trade_messages))
         println()
     end
 
@@ -960,5 +934,5 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         return mid_prices, micro_prices
     end
 
-
 end
+#---------------------------------------------------------------------------------------------------
