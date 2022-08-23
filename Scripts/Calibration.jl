@@ -14,6 +14,10 @@ Calibration:
     8. Generate confidence intervals for the empirical and simulated moments
 - Examples:
     1. Calibration
+        date = DateTime("2019-07-08")
+        startTime = date + Hour(9) + Minute(1)
+        endTime = date + Hour(16) + Minute(50) 
+        empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
         ta_rounds_arg = [5, 10, 20, 30, 35]
         f_reltol_arg = [0.3, 0.2, 0.1, 0.05, 0]
         initialsolution = [5, 5, 0.1, 3.5, 5, 0.015]
@@ -156,6 +160,12 @@ function Calibrate(initialsolution::Vector{Float64}, empiricallogreturns::Vector
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Create the W for empirical and simulated returns -----#
+# MovingBlockBootstrap(empiricalLogReturns.MicroPriceLogReturns)
+# MovingBlockBootstrapSimulated(simulatedLogReturns.MicroPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
+# PlotBoostrapMoments()
+#---------------------------------------------------------------------------------------------------
+
 #----- Generate the empirical returns and moments -----#
 # # make sure these are the same for the stylized facts and sensitivity analysis
 # date = DateTime("2019-07-08")
@@ -164,12 +174,6 @@ end
 
 # empiricalLogReturns, empiricalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 # simulatedLogReturns, simulatedMoments = GenerateSimulatedReturnsAndMoments(empiricalLogReturns.MidPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
-#---------------------------------------------------------------------------------------------------
-
-#----- Create the W for empirical and simulated returns -----#
-# MovingBlockBootstrap(empiricalLogReturns.MicroPriceLogReturns)
-# MovingBlockBootstrapSimulated(simulatedLogReturns.MicroPriceLogReturns, empiricalLogReturns.MicroPriceLogReturns)
-# PlotBoostrapMoments()
 #---------------------------------------------------------------------------------------------------
 
 #----- Calibrate -----#
@@ -196,10 +200,10 @@ function PlotObjectiveConvergence(stacktrace)
     # Objectives
     objectives = plot(1:iters, f, seriestype = :line, linecolor = :blue, label = "Weighted SSE objective", xlabel = "Iteration", ylabel = "Weighted SSE objective", legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, xaxis = false, xticks = false, legend = :bottomleft, guidefontsize = 7, yscale = :log10, minorticks = true, left_margin = 5Plots.mm, right_margin = 15Plots.mm)
     plot!(twinx(), 1:iters, g_norm, seriestype = :line, linecolor = :purple, label = "Convergence criterion", ylabel = "Convergence criterion", legend = :topright, legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, yscale = :log10, minorticks = true, guidefontsize = 7)
-    savefig(objectives, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessBestVertexOG1.pdf")
+    savefig(objectives, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessBestVertexOG.pdf")
     # Simplex values
     convergence = plot(1:iters, f_simplex, seriestype = :line, linecolor = [:blue :purple :green :orange :red :black :magenta], xlabel = "Iteration", ylabel = "Weighted SSE objective", legend = false, tickfontsize = 5, guidefontsize = 7, yscale = :log10, minorticks = true)
-    savefig(convergence, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessAllSimplexValuesOG1.pdf")
+    savefig(convergence, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessAllSimplexValuesOG.pdf")
 end
 # stacktrace = load("../Data/Calibration/OptimizationResult.jld")["result"]
 # PlotObjectiveConvergence(stacktrace)

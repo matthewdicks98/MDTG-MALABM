@@ -379,6 +379,7 @@ function classifyTrades(full_df::DataFrame)
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Make clean TAQ data -----# 
 function makeCleanTaqData(ticker::String)
     data = CSV.read("../Data/JSE/JSERAWTAQ"*ticker*".csv", DataFrame)
     println("Read in data...")
@@ -402,3 +403,4 @@ function makeCleanTaqData(ticker::String)
 end
 
 # makeCleanTaqData("NPN")
+#---------------------------------------------------------------------------------------------------

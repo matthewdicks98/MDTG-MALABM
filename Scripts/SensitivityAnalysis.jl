@@ -54,7 +54,7 @@ function GenerateEmpericalReturnsAndMoments(startTime::DateTime, endTime::DateTi
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Sensitivity analysis -----#
+#----- Generating parameter combinations -----#
 function GenerateParameterCombinations(NᴸₜRange::Vector{Int64}, NᴸᵥRange::Vector{Int64}, δRange::Vector{Float64}, κRange::Vector{Float64}, νRange::Vector{Float64}, σᵥRange::Vector{Float64})
     println("Generating parameter combinations")
     parameterCombinations = Vector{Parameters}()
@@ -77,7 +77,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Sensitivity analysis -----#
-function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::Dict, parameterCombinations::Vector{Parameters}, parameterCombinationsRange::Vector{Int64})
+function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::Dict, parameterCombinations::Vector{Parameters})
     StartJVM()
     gateway = Login(1, 1)
     open("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv", "w") do file
@@ -128,7 +128,7 @@ end
 
 # parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
 
-# @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange)
+# @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations)
 
 #---------------------------------------------------------------------------------------------------
 
