@@ -1,11 +1,10 @@
 #=
 StylizedFacts:
-- Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, Matthew Dicks
-- Function: Plot the stylized facts of HFT data for different time resolutions
+- Julia version: 1.7.1
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (Some edits and additions made by Matthew Dicks)
+- Function: Plots the stylised fact for JSE and CoinTossX data
 - Structure:
     1. Generate stylized facts
-    2. Extract OHLCV data
     3. Log return sample distributions for different time resolutions
     4. Log-return and absolute log-return autocorrelation
     5. Trade sign autocorrealtion
@@ -14,8 +13,8 @@ StylizedFacts:
     8. Depth profile
     9. Price Impact
 - Examples
-    PriceImpact("Sensitivity"); PriceImpact("JSE")
-    StylizedFacts("CoinTossX"); StylizedFacts("JSE")
+    PriceImpact("Sensitivity", startTime, endTime); PriceImpact("JSE", startTime, endTime)
+    StylizedFacts("CoinTossX", startTime, endTime); StylizedFacts("JSE", startTime, endTime)
 =#
 using Distributions, CSV, Plots, StatsPlots, Dates, StatsBase, DataFrames, Plots.PlotMeasures
 import Statistics.var
@@ -50,32 +49,6 @@ function StylizedFacts(exchange::String, startTime::DateTime, endTime::DateTime;
     println("Stylised facts complete")
     trades = filter(x -> x.Type == :Market, data)
     println("Trade Volume: " * string(sum(trades[:,:Volume])))
-    # VolumeVolatilityCorrelation(exchange, data; N = 500, format = format)
-end
-#---------------------------------------------------------------------------------------------------
-
-#----- Extract OHLCV data -----#
-function OHLCV(exchange::String, resolution)
-    println("Computing OHLCV")
-    println("Reading in data...")
-    l1lob = CSV.File(string("../Data/" * exchange * "/L1LOB.csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
-    barTimes = l1lob.DateTime[1]:resolution:l1lob.DateTime[end]
-    open(string("Data/" * exchange * "/OHLCV.csv"), "w") do file
-        println(file, "DateTime,MidOpen,MidHigh,MidLow,MidClose,MicroOpen,MicroHigh,MicroLow,MicroClose,Volume,VWAP")
-        for t in 1:(length(barTimes) - 1)
-            startIndex = searchsortedfirst(l1lob.DateTime, barTimes[t])
-            endIndex = searchsortedlast(l1lob.DateTime, barTimes[t + 1])
-            if !(startIndex >= endIndex)
-                bar = l1lob[startIndex:endIndex, :]
-                tradesBar = filter(x -> x.Type == :Market, bar)
-                midPriceOHLCV = string(bar.MidPrice[1], ",", maximum(skipmissing(bar.MidPrice)), ",", minimum(skipmissing(bar.MidPrice)), ",", bar.MidPrice[end])
-                microPriceOHLCV = string(bar.MicroPrice[1], ",", maximum(skipmissing(bar.MicroPrice)), ",", minimum(skipmissing(bar.MicroPrice)), ",", bar.MicroPrice[end])
-                vwap = !isempty(tradesBar) ? sum(tradesBar.TradeVol .* tradesBar.Trade) / sum(tradesBar.TradeVol) : missing
-                println(file, string(barTimes[t], ",", midPriceOHLCV, ",", microPriceOHLCV, ",", sum(bar.Volume), ",", vwap))
-            end
-        end
-    end
-    println("OHLCV complete")
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -145,21 +118,6 @@ function ExtremeLogReturnPercentileDistribution(exchange::String, logreturns::Ve
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Volume-volatility correlation -----#
-# function VolumeVolatilityCorrelation(exchange::String, data::DataFrame; N = 5000, format::String = "pdf")
-#     tradeIndeces = findall(x -> x == :Market, data.Type)
-#     days = unique(data.Date)
-#     variances = @distributed (hcat) for day in days
-#         dayIndeces = tradeIndeces[searchsorted(data[tradeIndeces, :Date], day)]
-#         σ = map(i -> var(diff(log.(skipmissing(data[1:(dayIndeces[i]), :MicroPrice])))), 1:N)
-#         σ
-#     end
-#     color = exchange == "CoinTossX" ? :green : :purple
-#     correlation = plot(1:N, mean(variances, dims = 2), seriestype = :line, linecolor = color, xlabel = "Variance", ylabel = "Number of trades", legend = false, scale = :log10)
-#     savefig(correlation, string("Images/Volume-VolatilityCorrelation.", format))
-# end
-#---------------------------------------------------------------------------------------------------
-
 #----- Depth profile -----#
 function DepthProfile(exchange::String; format::String = "pdf")
     println("Computing depth profiles")
@@ -221,14 +179,13 @@ function PriceImpact(exchange::String, startTime::DateTime, endTime::DateTime; f
 end
 #---------------------------------------------------------------------------------------------------
 
-# make sure these are the same as the ones used in the sensitivity analysis
-date = DateTime("2019-07-08")
-startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(16) + Minute(50) ###### Change to 16:50
+# # make sure these are the same as the ones used in the sensitivity analysis
+# date = DateTime("2019-07-08")
+# startTime = date + Hour(9) + Minute(1)
+# endTime = date + Hour(16) + Minute(50)
 
-
-StylizedFacts("JSE", startTime, endTime)
+# StylizedFacts("JSE", startTime, endTime)
 # PriceImpact("JSE", startTime, endTime)
-StylizedFacts("CoinTossX", startTime, endTime)
+# StylizedFacts("CoinTossX", startTime, endTime)
 # PriceImpact("CoinTossX", startTime, endTime)
 # DepthProfile("CoinTossX")

@@ -1,7 +1,7 @@
 #=
 NMTA:
-- Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Julia version: 1.7.1
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some edits, additions and bug fixes by Matthew Dicks)
 - Function: Optimisation heursitic for agent-based models
 - Structure:
     1. Structures
@@ -9,6 +9,10 @@ NMTA:
     3. Trace
     4. Optimization
     5. API
+- Example:
+    objective = NonDifferentiable(x -> WeightedSumofSquaredErrors(Parameters(Nᴸₜ = Int(abs(ceil(x[1]))), Nᴸᵥ = Int(abs(ceil(x[2]))), δ = abs(x[3]), κ = abs(x[4]), ν = abs(x[5]), σᵥ = abs(x[6])), 5, W, empiricalmoments, empiricallogreturns, gateway), initialsolution)
+    optimizationoptions = Options(show_trace = true, store_trace = true, trace_simplex = true, extended_trace = true, iterations = sum(ta_rounds), ξ = 0.15, ta_rounds = ta_rounds, f_reltol = f_reltol)
+    @time result = !isnothing(neldermeadstate) ? Optimize(objective, initialsolution, optimizationoptions, neldermeadstate) : Optimize(objective, initialsolution, optimizationoptions)
 =#
 using Printf
 import StatsBase: var
@@ -298,7 +302,7 @@ function PostProcess!(f::NonDifferentiable, state::NelderMeadState)
     f.F = f_min
     state.x .= x_min
 end
-function PostProcessError!(f::NonDifferentiable, state::NelderMeadState) # if an error occurs in the simulation we just want to save state (dont rerun sim might produce another error)
+function PostProcessError!(f::NonDifferentiable, state::NelderMeadState) # if an error occurs in the simulation we just want to save state
     # get the current min value of the function
     f_min, i_f_min = findmin(state.f_simplex)
 

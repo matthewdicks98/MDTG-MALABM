@@ -1,7 +1,7 @@
 #=
 CoinTossXUtilities:
-- Julia version: 1.5.3
-- Authors: Matthew Dicks, Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Julia version: 1.7.1
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some edits and additions by Matthew Dicks)
 - Function: Provide the necessary functions for running simulations with CoinTossX
 - Structure:
     1. Build, deploy, start CoinTossX and initialise Java Virtual Machine with required byte code paths
@@ -62,10 +62,7 @@ end
 function StartJVM()
     JavaCall.addClassPath(ctx_directory * "/CoinTossXIvan/ClientSimulator/build/classes/main")
     JavaCall.addClassPath(ctx_directory * "/CoinTossXIvan/ClientSimulator/build/install/ClientSimulator/lib/*.jar")
-    # JavaCall.init()
-    # "-XX:+UseLargePages",
-    # "-server",
-    JavaCall.init(["-Xmx2G", "-Xms2G", "-d64", "-XX:+UseStringDeduplication", "-Dagrona.disable.bounds.checks=true", "-XX:+UseG1GC", "-XX:+OptimizeStringConcat", "-XX:+UseCondCardMark"])
+    JavaCall.init(["-Xmx2G", "-Xms2G", "-d64", "-server", "-XX:+UseStringDeduplication", "-Dagrona.disable.bounds.checks=true", "-XX:+UseG1GC", "-XX:+OptimizeStringConcat", "-XX:+UseCondCardMark"])
     println("--------------------------------JVM has started--------------------------------")
 end
 #---------------------------------------------------------------------------------------------------

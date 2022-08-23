@@ -1,7 +1,7 @@
 #=
 Moments:
 - Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some optimisations made by Matthew Dicks)
 - Function: Compute moments of mid-price time-series
 - Structure:
     1. Moments structure
@@ -18,7 +18,7 @@ import Logging
 Logging.disable_logging(Logging.Warn) # for ties warning in the estimation of the KS statistic
 #---------------------------------------------------------------------------------------------------
 
-#----- Get the upper quantile -----#
+#----- Get the upper quantile -----# (optimise the finding of the quantiles)
 function GetUpperQuantile(x, p)
     s = sort(x, rev = true)
     q = quantile(x, p)
@@ -50,7 +50,7 @@ struct Moments # Moments of log-returns
         gph = GPH(abs.(logreturns1))
         adf = ADFTest(logreturns1, :none, 0).stat
         garch = sum(coef(ARCHModels.fit(GARCH{1, 1}, logreturns1))[2:3])
-        hill = HillEstimator(GetUpperQuantile(logreturns1, 0.95), 50) # findall is a massive inefficiency
+        hill = HillEstimator(GetUpperQuantile(logreturns1, 0.95), 50) # findall is a massive inefficiency so optimised
         new(μ, σ, κ, ks, hurst, gph, adf, garch, hill)
     end
 end

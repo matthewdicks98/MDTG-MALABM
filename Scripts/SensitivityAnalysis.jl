@@ -1,3 +1,31 @@
+#= 
+SensitivityAnalysis:
+- Julia version: 1.7.1
+- Authors: Matthew Dicks, Tim Gebbie, (some code was adapted from https://github.com/IvanJericevich/IJPCTG-ABMCoinTossX)
+- Function: Perform the sensitivity analysis, plot the results and save them in figures
+- Structure:
+    1. Sensitivity analysis
+    2. Visualisations
+- Examples:
+    1. Sensitivity analysis 
+        date = DateTime("2019-07-08")
+        startTime = date + Hour(9) + Minute(1)
+        endTime = date + Hour(16) + Minute(50) # Hour(17)
+        empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+        NᴸₜRange = [3,6,9,12]
+        NᴸᵥRange = [3,6,9,12]
+        δRange = collect(range(0.01, 0.2, length = 4))
+        κRange = collect(range(2, 5, length = 4))
+        νRange = collect(range(2, 8, length = 4))
+        σᵥRange = collect(range(0.0025, 0.025, length = 4))
+        parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
+        @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange) [takes about 30hrs]
+    2. Visualisations
+        MomentViolinPlots("MicroPrice", true); MomentViolinPlots("MidPrice", true)
+        MomentInteractionSurfaces("MicroPrice", false); MomentInteractionSurfaces("MidPrice", false)
+        ObjectiveInteractionSurfaces("MicroPrice", false); ObjectiveInteractionSurfaces("MidPrice", false)
+        ParameterMomentCorrelationMatrix("MicroPrice", false); ParameterMomentCorrelationMatrix("MidPrice", false)
+=#
 ENV["JULIA_COPY_STACKS"]=1
 using ProgressMeter, CSV, Plots, DataFrames, StatsPlots, Statistics, ColorSchemes, Dates, JLD, Combinatorics, Colors
 using LinearAlgebra: diag, inv, transpose
@@ -7,6 +35,8 @@ path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-M
 cd(path_to_folder)
 
 include(path_to_folder * "/ReactiveABM.jl"); include(path_to_folder * "/CoinTossXUtilities.jl"); include(path_to_folder * "/Moments.jl") # This also includes CoinTossXUtilities.jl
+
+#----- Sensitivity analysis -----#
 
 #----- Generate emperical log-returns and emperical moments -----#
 function GenerateEmpericalReturnsAndMoments(startTime::DateTime, endTime::DateTime)
@@ -48,12 +78,11 @@ end
 
 #----- Sensitivity analysis -----#
 function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::Dict, parameterCombinations::Vector{Parameters}, parameterCombinationsRange::Vector{Int64})
-    # StartCoinTossX(false, false)
     StartJVM()
     gateway = Login(1, 1)
     open("../Data/SensitivityAnalysis/SensitivityAnalysisResults.csv", "w") do file
         println(file, "Type,Nt,Nv,Nh,Delta,Kappa,Nu,M0,SigmaV,LambdaMin,LambdaMax,Gamma,T,Seed,Mean,Std,Kurtosis,KS,Hurst,GPH,ADF,GARCH,Hill")
-        for (i, parameters) in enumerate(parameterCombinations[1:5]) # [parameterCombinationsRange[1]:parameterCombinationsRange[2]])
+        for (i, parameters) in enumerate(parameterCombinations)
             try 
                 seed = 1
                 @time midPrices, microPrices = simulate(parameters, gateway, false, false, seed = seed)
@@ -80,17 +109,13 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
         end 
     end
     Logout(gateway)
-    # StopCoinTossX()
 end
 #---------------------------------------------------------------------------------------------------
 
-# collect the comand line arguments
-# parameterCombinationsRange = map(x -> parse(Int64, x), ARGS)
-
-# make sure these are the same for the stylized facts and Calibration
-date = DateTime("2019-07-08")
-startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(16) + Minute(50) # Hour(17) ###### Change to 16:50
+## make sure these are the same for the stylized facts and Calibration
+# date = DateTime("2019-07-08")
+# startTime = date + Hour(9) + Minute(1)
+# endTime = date + Hour(16) + Minute(50) # Hour(17)
 
 # empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
@@ -105,6 +130,8 @@ endTime = date + Hour(16) + Minute(50) # Hour(17) ###### Change to 16:50
 
 # @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations, parameterCombinationsRange)
 
+#---------------------------------------------------------------------------------------------------
+
 #----- Visualizations -----#
 
 #----- Compute Objective Function -----#
@@ -114,10 +141,8 @@ function ComputeObjective(empericalMoments::Dict)
     objs = Vector{Float64}()
     for i in 1:nrow(sr)
         if i % 2 == 0
-            # errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMicroPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
             errors = [sr[i,:Mean]-empericalMoments["empericalMicroPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMicroPriceMoments"].σ sr[i,:KS]-empericalMoments["empericalMicroPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMicroPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMicroPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMicroPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMicroPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMicroPriceMoments"].hill]
         else
-            # errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:Kurtosis]-empericalMoments["empericalMidPriceMoments"].κ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
             errors = [sr[i,:Mean]-empericalMoments["empericalMidPriceMoments"].μ sr[i,:Std]-empericalMoments["empericalMidPriceMoments"].σ sr[i,:KS]-empericalMoments["empericalMidPriceMoments"].ks sr[i,:Hurst]-empericalMoments["empericalMidPriceMoments"].hurst sr[i,:GPH]-empericalMoments["empericalMidPriceMoments"].gph sr[i,:ADF]-empericalMoments["empericalMidPriceMoments"].adf sr[i,:GARCH]-empericalMoments["empericalMidPriceMoments"].garch sr[i,:Hill]-empericalMoments["empericalMidPriceMoments"].hill]
         end
         obj = errors * W * transpose(errors)
@@ -138,9 +163,7 @@ function Winsorize(paramvalues, momentvalues)
     df_winsor = df[findall(x -> lower < x && x < upper, df.MomentValues),:]
     return df_winsor.ParamValues, df_winsor.MomentValues
 end
-#---------------------------------------------------------------------------------------------------
 
-#----- Moment Values For Parameter Marginals -----#
 function MomentViolinPlots(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
@@ -159,12 +182,10 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
                 p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
                 xlabel!(paramlabel, fontsize = 5)
                 ylabel!(momentlabel, fontsize = 5)
-                # boxplot!((round.(params_sr, digits = 4)), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false, group = params_sr)
             else
                 p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 4)
                 xlabel!(paramlabel, fontsize = 5)
                 ylabel!(momentlabel, fontsize = 5)
-                # boxplot!(round.(params_sr, digits = 4), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false)
             end
             savefig(p, "../Images/SensitivityAnalysis/Violin/NoKurtosis/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")
         end
@@ -218,7 +239,6 @@ end
 function ParameterMomentCorrelationMatrix(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
-    # variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
     variables = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
     sr = sr[:,first.(variables)]
     C = cor(Matrix(sr))
