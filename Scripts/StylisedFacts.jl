@@ -346,6 +346,6 @@ end
 
 # StylizedFacts("JSE", "L1LOB", startTime, endTime)
 # PriceImpact("JSE", "L1LOB", startTime, endTime)
-# StylizedFacts("CoinTossX", "L1LOB4", startTime, endTime) # "/alpha0.1_iterations1000_V200_S10_430/L1LOBRLIteration1000" numT = , V = 
-# PriceImpact("CoinTossX", "L1LOB4", startTime, endTime)
-# DepthProfile("CoinTossX", "DepthProfileData4") # "/alpha0.1_iterations1000_V50_S5_430/DepthProfileDataRLIteration1000"
+# StylizedFacts("CoinTossX", "L1LOB", startTime, endTime) # "/alpha0.1_iterations1000_V200_S10_430/L1LOBRLIteration1000" numT = , V = 
+# PriceImpact("CoinTossX", "L1LOB", startTime, endTime)
+# DepthProfile("CoinTossX", "DepthProfileData") # "/alpha0.1_iterations1000_V50_S5_430/DepthProfileDataRLIteration1000"

@@ -124,23 +124,23 @@ function SensitivityAnalysis(empericalLogReturns::DataFrame, empericalMoments::D
 end
 #---------------------------------------------------------------------------------------------------
 
-# make sure these are the same for the stylized facts and Calibration
-date = DateTime("2019-07-08")
-startTime = date + Hour(9) + Minute(1)
-endTime = date + Hour(16) + Minute(50)
+## make sure these are the same for the stylized facts and Calibration
+# date = DateTime("2019-07-08")
+# startTime = date + Hour(9) + Minute(1)
+# endTime = date + Hour(16) + Minute(50)
 
-empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
+# empericalLogReturns, empericalMoments = GenerateEmpericalReturnsAndMoments(startTime, endTime)
 
-NᴸₜRange = [3,6,9,12]
-NᴸᵥRange = [3,6,9,12]
-δRange = collect(range(0.01, 0.2, length = 4))
-κRange = collect(range(2, 5, length = 4))
-νRange = collect(range(2, 8, length = 4))
-σᵥRange = collect(range(0.0025, 0.025, length = 4))
+# NᴸₜRange = [3,6,9,12]
+# NᴸᵥRange = [3,6,9,12]
+# δRange = collect(range(0.01, 0.2, length = 4))
+# κRange = collect(range(2, 5, length = 4))
+# νRange = collect(range(2, 8, length = 4))
+# σᵥRange = collect(range(0.0025, 0.025, length = 4))
 
-parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
+# parameterCombinations = GenerateParameterCombinations(NᴸₜRange, NᴸᵥRange, δRange, κRange, νRange, σᵥRange)
 
-@time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations)
+# @time SensitivityAnalysis(empericalLogReturns, empericalMoments, parameterCombinations)
 
 #---------------------------------------------------------------------------------------------------
 
