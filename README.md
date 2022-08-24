@@ -3,14 +3,13 @@
 We consider the learning dynamics of a single reinforcement learning optimal execution trading agent when it interacts with an event driven agent-based financial market model. Trading takes place asynchronously through a matching engine in event time. The optimal execution agent is considered at different levels of initial order-sizes and differently sized state spaces. The resulting impact on the agent-based model and market are considered using a calibration approach that explores changes in the empirical stylised facts and price impact curves. Convergence, volume trajectory and action trace plots are used to visualise the learning dynamics. The event-time ABM is an extension of the hybrid stochastic time ABM with the description found [here](https://arxiv.org/abs/2108.07806) and the implementation found in this repository: [IJPCTG-ABMCoinTossX](https://github.com/IvanJericevich/IJPCTG-ABMCoinTossX).
 
 ## Prerequisites
----
+
 1. Julia version 1.7.1.
 2. A text editor such as [VSCode](https://code.visualstudio.com/) or [Atom](https://atom.io/).
 4. [Git](https://git-scm.com/)
 3. The matching engine used is a fork from the official release of version [v1.1.0](https://github.com/dharmeshsing/CoinTossX/tree/v1.1.0) of [CoinTossX](https://github.com/dharmeshsing/CoinTossX). This fork was used because it contains a UDP socket on which market data updates can be received from the matching engine. The fork can be found [here](https://github.com/IvanJericevich/CoinTossX).<Need to update to include the wait loop removal.>
 
 ## Usage 
----
 
 To clone this repository:
 
@@ -48,7 +47,6 @@ git checkout <branch_name>
 ```
 
 ## Reproducibility
----
 
 ### Key files
 
@@ -69,15 +67,14 @@ In addition to the functionality listed above the [RL-ABM](https://github.com/ma
 <Data structure To replicate the data analysis the following file paths hold the required information: Data>
 
 ## Authors
----
+
 1. Matthew Dicks
 2. Tim Gebbie
 
 ## Publications
----
 
 The link to the arxiv paper can be found [here](https://arxiv.org/abs/2208.10434).
 
 ## References
----
+
 Since this work extends previous work code was used from the repository [IJPCTG-ABMCoinTossX](https://github.com/IvanJericevich/IJPCTG-ABMCoinTossX). 
