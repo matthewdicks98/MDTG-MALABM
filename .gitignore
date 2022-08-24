@@ -31,12 +31,14 @@ Images/CoinTossX/
 Images/JSE/
 Images/SensitivityAnalysis/
 Images/Calibration/
+Images/RL
 
 # Data files
 Data/CoinTossX/
 Data/JSE/
 Data/SensitivityAnalysis
 Data/Calibration/
+Data/RL
 
 # bash scripts
 BashScripts/
