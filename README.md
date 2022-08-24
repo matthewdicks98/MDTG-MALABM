@@ -5,7 +5,7 @@ We consider the learning dynamics of a single reinforcement learning optimal exe
 ## Prerequisites
 
 1. Julia version 1.7.1.
-2. A text editor such as [VSCode](https://code.visualstudio.com/) or [Atom](https://atom.io/).
+2. A text editor such as [VS Code](https://code.visualstudio.com/) or [Atom](https://atom.io/).
 4. [Git](https://git-scm.com/)
 3. The matching engine used is a fork from the official release of version [v1.1.0](https://github.com/dharmeshsing/CoinTossX/tree/v1.1.0) of [CoinTossX](https://github.com/dharmeshsing/CoinTossX). This fork was used because it contains a UDP socket on which market data updates can be received from the matching engine. The fork can be found [here](https://github.com/IvanJericevich/CoinTossX).<Need to update to include the wait loop removal.>
 

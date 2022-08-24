@@ -211,6 +211,6 @@ end
 
 # StylizedFacts("JSE", "L1LOB", startTime, endTime)
 # PriceImpact("JSE", "L1LOB", startTime, endTime)
-# StylizedFacts("CoinTossX", "L1LOB4", startTime, endTime)
-# PriceImpact("CoinTossX", "L1LOB4", startTime, endTime)
-# DepthProfile("CoinTossX", "DepthProfileData4")
+# StylizedFacts("CoinTossX", "L1LOB", startTime, endTime)
+# PriceImpact("CoinTossX", "L1LOB", startTime, endTime)
+# DepthProfile("CoinTossX", "DepthProfileData")
