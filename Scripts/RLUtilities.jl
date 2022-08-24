@@ -1,10 +1,41 @@
+#=
+RLUtilities:
+- Julia version: 1.7.1
+- Authors: Matthew Dicks, Tim Gebbie
+- Function: Provide functions that can test and train a single RL selling agent in an event based ABM
+- Structure:
+    1. Simulate historical distributions for spread and volume states (ensure CoinTossX is started)
+    2. Create spread and volume state spaces from hisorical distributions
+    3. Generate action spaced
+    4. Returning of current state
+    5. Test a single RL agent in an ABM for 1 iteration
+    6. Train 1 RL selling agent
+- Examples:
+    1. Simulate historical distributions for spread and volume states (ensure CoinTossX is started)
+        parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
+        GenerateHistoricalDistributions(parameters, 365)
+    2. Create spread and volume state spaces from hisorical distributions
+        spread_states_df, volume_states_df = HistoricalDistributionsStates(5,5,false,false,true,1) 
+    3. Train 1 RL selling agent
+        parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
+        rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α)
+        numEpisodes = 1000
+        steps = [75, 175, 50, 100]    
+        stepSizes = [0.1, 0.8, 0.09, 0]   
+        iterationsPerWrite = 100
+        print_and_plot = false                    
+        write_messages = false                            
+        write_volume_spread = false
+        rlTraders = true
+        @time TrainRL(parameters, rlParameters, numEpisodes, rlTraders, iterationsPerWrite, steps, stepSizes) [takes about 8hrs]
+=#
 ENV["JULIA_COPY_STACKS"]=1
 using DataFrames, CSV, Plots, Statistics, DataStructures, JLD, Plots.PlotMeasures
 
 path_to_files = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 include(path_to_files * "Scripts/ReactiveABM.jl"); include(path_to_files * "Scripts/CoinTossXUtilities.jl")
 
-#----- Simulate historical distributions for spread and volume -----# (ensure that CoinTossX has started)
+#----- Simulate historical distributions for spread and volume states -----# (ensure that CoinTossX has started)
 function GenerateHistoricalDistributions(calibratedParameters::Parameters, simulations::Int64) 
     StartJVM()
     gateway = Login(1, 1)
@@ -28,7 +59,7 @@ function GenerateHistoricalDistributions(calibratedParameters::Parameters, simul
     Logout(gateway)
     StopCoinTossX()
 end 
-# set the parameters
+# set the ABM parameters
 # Nᴸₜ = 8             
 # Nᴸᵥ = 6
 # Nᴴ = 30             
@@ -58,16 +89,6 @@ function HistoricalDistributionsStates(numSpreadQuantiles::Int64, numVolumeQuant
     spreads = parse.(Float64, spreads_df[findall(x -> x != "Spread", spreads_df.Spread),:Spread])
     bid_volumes = parse.(Float64, bid_volumes_df[findall(x -> x != "BestBidVolume", bid_volumes_df.BestBidVolume),:BestBidVolume])
     ask_volumes = parse.(Float64, ask_volumes_df[findall(x -> x != "BestAskVolume", ask_volumes_df.BestAskVolume),:BestAskVolume])
-
-    # spreads_sorted = sort(spreads)
-    # println(length(spreads_sorted[1:findfirst(x -> x > 1.0, spreads_sorted)])/length(spreads_sorted))
-    # println(length(spreads_sorted[1:findfirst(x -> x > 13.0, spreads_sorted)])/length(spreads_sorted))
-
-    # bid_volumes_sorted = sort(bid_volumes)
-    # println(length(bid_volumes_sorted[1:findfirst(x -> x > 6000, bid_volumes_sorted)])/length(bid_volumes_sorted))
-
-    # ask_volumes_sorted = sort(ask_volumes)
-    # println(length(ask_volumes_sorted[1:findfirst(x -> x > 6000, ask_volumes_sorted)])/length(ask_volumes_sorted))
 
     # create the quantiles
     split_interval_factor = numSpreadQuantiles # used to split the interval 0.6 < x <= 1 into enough quantiles to get required states
@@ -213,8 +234,6 @@ function GetSpreadState(LOB::LOBState, rlParameters::RLParameters)
     if LOB.sₜ <= 0
         sₙ = 1
     end
-    # println("Spread = ", LOB.sₜ)
-    # println("Spread State = ", sₙ)
     return sₙ
 end
 function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
@@ -247,8 +266,6 @@ function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
     if v <= 0
         vₙ = 1
     end
-    # println("Volume = ", v, " | At = ", LOB.bₜ)
-    # println("Volume State = ", vₙ)
     return vₙ
 end
 function GetTimeState(t::Int64, rlParameters::RLParameters)
@@ -275,8 +292,6 @@ function GetTimeState(t::Int64, rlParameters::RLParameters)
     if t <= 0
         tₙ = 0  # this means that we will take an action such that we transition us to the terminal state with probability 1
     end
-    # println("Time = ", t)
-    # println("Time State = ", tₙ)
     return tₙ
 end
 function GetInventoryState(i::Int64, rlParameters::RLParameters)
@@ -301,8 +316,6 @@ function GetInventoryState(i::Int64, rlParameters::RLParameters)
     if i <= 0
         iₙ = 0 # this will then mean that we are going to return the terminal state, we have stopped trading
     end
-    # println("Inventory = ", i)
-    # println("Inventory State = ", iₙ)
     return iₙ
 end
 function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters, rlAgent::RL) # t and i are the remaining time and inventory
@@ -334,12 +347,9 @@ function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Flo
     # create and epsilon greedy policy for a given state
     num_actions_state = length(Q[state])
     policy = fill(epsilon / num_actions_state, num_actions_state) # each state has an equal prob of being chosen
-    # get the action with the lowest (highest) value for selling (buying)
     a_star = nothing
-    if rlAgent.actionType == "Sell" # want to maximize the profit
+    if rlAgent.actionType == "Sell" # want to maximize the profit (will throw an error if anything but a buy)
         a_star = argmax(Q[state]) 
-    elseif rlAgent.actionType == "Buy" # want to mimimize the cost (might need to change)
-        a_star = argmin(Q[state])
     end
     # the optimal action will be chosen with this probability
     policy[a_star] = 1 - epsilon + (epsilon / num_actions_state)
@@ -379,7 +389,8 @@ function TestRunRLABM()
     A = 10                       # number of action states
 
     spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,false,1)
-    actions = GenerateActions(A)
+    maxVolunmeIncrease = 2
+    actions = GenerateActions(A, maxVolunmeIncrease)
     actionType = "Sell"
     ϵ = 0.1            # used in epsilon greedy algorithm
     discount_factor = 1 # used in Q update (discounts future rewards)
@@ -402,13 +413,12 @@ function TestRunRLABM()
         @error "Something went wrong" exception=(e, catch_backtrace())
     finally
         Logout(gateway)
-        # StopCoinTossX()
     end
 end
 # TestRunRLABM()
 #---------------------------------------------------------------------------------------------------
 
-#----- Train RL Agent in an ABM -----# 
+#----- Train 1 RL selling agent in an ABM -----# 
 function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes::Int64, rlTraders::Bool, iterationsPerWrite::Int64, steps::Vector{Int64}, stepSizes::Vector{Float64})
 
     println("-------------------------------- Training RL Agent --------------------------------")
@@ -460,12 +470,6 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
             println("Number of Trades = ", rl_result["NumberTrades"])
             println()
 
-            # println()
-            # println("Resulting Q")
-            # for key in keys(rl_result["Q"])
-            #     println(key, " => ",rl_result["Q"][key], " | Total actions = ", sum(rl_result["Q"][key]))
-            # end
-            # println()
             if i > 1                
                 if prev_q != rlParameters.initialQ
                     println("Q Error")
@@ -484,17 +488,6 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
             # save the rl_result to the vector
             rl_result["Q"] = Dict(rl_result["Q"])
             push!(rl_results, i => rl_result)
-
-            # write the RL data from that iteration to a jld database
-            # if isfile(path_to_files * "/Data/RL/Training/Results.jld")
-            #     @time f = jldopen(path_to_files * "/Data/RL/Training/Results.jld", "r+")
-            #     rl_result["Q"] = Dict(rl_result["Q"])
-            #     @time f[string(i)] = rl_result
-            #     close(f)
-            # else
-            #     rl_result["Q"] = Dict(rl_result["Q"])
-            #     save(path_to_files * "/Data/RL/Training/Results.jld", string(i), rl_result)
-            # end
 
             # garbage collect
             GC.gc()

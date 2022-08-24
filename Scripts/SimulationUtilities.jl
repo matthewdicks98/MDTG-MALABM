@@ -1,3 +1,17 @@
+#=
+SimulationUtilities:
+- Julia version: 1.7.1
+- Authors: Matthew Dicks, Tim Gebbie
+- Function: 
+    1. Print and plot summary and test information
+    2. Store data to be written to files
+    3. Write raw messages from a simulation to a file
+- Structure:
+    1. Methods for printing and plotting summary and test information
+    2. Stuctures and methods for updating and storing running totals (e.g. best bid/offers)
+    3. Methods used to write raw data to a file
+    4. Write spread and best bid/offer volumes to a file for historical distributions
+=#
 ENV["JULIA_COPY_STACKS"]=1
 using Dates, Plots, CSV, DataFrames
 

@@ -1,7 +1,7 @@
 #=
 CoinTossXUtilities:
-- Julia version: 1.5.3
-- Authors: Matthew Dicks, Ivan Jericevich, Patrick Chang, Tim Gebbie
+- Julia version: 1.7.1
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some edits and additions by Matthew Dicks)
 - Function: Provide the necessary functions for running simulations with CoinTossX
 - Structure:
     1. Build, deploy, start CoinTossX and initialise Java Virtual Machine with required byte code paths

@@ -1,3 +1,25 @@
+#=
+RLVisualisations:
+- Julia version: 1.7.1
+- Authors: Matthew Dicks, Tim Gebbie
+- Function: Visualise the data generated from training the RL agents
+- Structure:
+    1. Epsion decay
+    2. Returns, states, trades, Q-matrix, and policy convergence
+    3. State-action convergence
+    4. Visualising the policy
+    5. Learning dynamics (average actions taken over time)
+    6. Volume trajectory
+    7. Estimated stylised fact moments over training period
+- Examples:
+    1. EpsilonDecay(steps, sizes)
+    2. PlotRLConvergenceResults(actions)
+    3. StateActionConvergence(l, numT, I, B, W, A, V, actions)
+    4. PolicyVisualization(l[1000]["Q"], numT, I, B, W, A, V, actions)
+    5. PlotAverageActionsOverTime(l, numT, I, B, W, A, V, actions)
+    6. PlotVolumeTragectory(l, numT, I, B, W, A, V, actions)
+    7. PlotStylisedFactDynamics(empericalLogReturns, moments, abm_moments_df)
+=#
 ENV["JULIA_COPY_STACKS"]=1
 using DataFrames, CSV, Plots, Statistics, DataStructures, JLD, Plots.PlotMeasures, LaTeXStrings
 
@@ -59,8 +81,6 @@ function PlotRLConvergenceResults(actionsMap::Dict)
     for V in Vs
         rewards5 = Vector{Float64}()
         rewards10 = Vector{Float64}()
-        # @time l5 = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S5.jld")["rl_results"]
-        # @time l10 = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S10.jld")["rl_results"]
         l5 = data["Results_alpha0.1_iterations1000_V" * string(V) * "_S5"]
         l10 = data["Results_alpha0.1_iterations1000_V" * string(V) * "_S10"]
         n = length(l5)
@@ -81,13 +101,12 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$", legendfontsize = 4, fg_legend = :transparent)
             hline!([10000], linecolor = :black, label = raw"$\mathrm{m_{0}}$", linestyle = :dash)
 
-            # hline!([V * 450 * 10000], linecolor = :black, label = "IS", linestyle = :dash)
         else
+
             p = plot(rewards5 ./ (V * 430), fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$", legendfontsize = 4, fg_legend = :transparent, fontfamily="Computer Modern")
             plot!(rewards10 ./ (V * 430), fillcolor = :blue, linecolor = :blue, legend = :outertopright, xlabel = "Episodes", ylabel = ylab, title = raw"$\mathrm{X_{0} =} {" * string(V * 430) * raw"}$", titlefontsize = 6, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10}$", legendfontsize = 4, fg_legend = :transparent)
             hline!([10000], linecolor = :black, label = raw"$\mathrm{m_{0}}$", linestyle = :dash)
 
-            # hline!([V * 450 * 10000], linecolor = :black, label = "IS", linestyle = :dash)
         end
         
         push!(reward_plots, p)
@@ -115,9 +134,6 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             push!(num_trades_dict, string(num_state) * "_" * string(V) => num_trades)
         end
     end
-    # #plot the number of states convergence 
-    # num_states_plots = plot(1:length(num_states_dict["5_100"]), num_states_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", legend = :bottomleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# States (T,I,B,W = 5)", title = "# States per Episode", right_margin = 12mm)
-
     num_states_plots = plot(1:length(num_states_dict["5_200"]), num_states_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = raw"# States ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$)", legendfontsize = 8, right_margin = 15mm, fontfamily="Computer Modern")
     plot!(1:length(num_states_dict["5_100"]), num_states_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
     plot!(1:length(num_states_dict["5_50"]), num_states_dict["5_50"], fillcolor = :green, linecolor = :green, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomleft, fg_legend = :transparent)
@@ -127,9 +143,6 @@ function PlotRLConvergenceResults(actionsMap::Dict)
     plot!(subplot, 1:length(num_states_dict["10_50"]), num_states_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
     savefig(num_states_plots, path_to_files * "/Images/RL/NumberStatesConvergence430.pdf")
 
-    # # plot the number of trades convergence
-    # num_states_plots = plot(1:length(num_trades_dict["5_100"]), num_trades_dict["5_100"], fillcolor = :magenta, linecolor = :magenta, label = "T,I,B,W = 10, Volume = 200", legend = :bottomright, fg_legend = :transparent, xlabel = "Episodes", ylabel = "# Trades", title = "# Trades per Episode")
-    
     num_trades_plots = plot(1:length(num_trades_dict["10_200"]), num_trades_dict["10_200"], fillcolor = :magenta, linecolor = :magenta, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent, legendfontsize = 8, xlabel = "Episodes", ylabel = "# Trades", fontfamily="Computer Modern")
     plot!(1:length(num_trades_dict["10_100"]), num_trades_dict["10_100"], fillcolor = :orange, linecolor = :orange, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
     plot!(1:length(num_trades_dict["10_50"]), num_trades_dict["10_50"], fillcolor = :purple, linecolor = :purple, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 10, \;\; X_{0} =} {" * string(50 * 430) * raw"}$", legend = :bottomright, fg_legend = :transparent)
@@ -159,7 +172,6 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             push!(policy_diffs_dict, string(num_state) * "_" * string(V) => p_diffs)
         end
     end
-    # policy_diffs_plots = plot(1:length(policy_diffs_dict["5_100"]), policy_diffs_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", fg_legend = :transparent, xlabel = "Episodes", ylabel = "Policy Differences", title = "1 Step Policy Differences")
 
     policy_diffs_plots = plot(1:length(policy_diffs_dict["5_200"]), policy_diffs_dict["5_200"], fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", fg_legend = :transparent, legendfontsize = 8, xlabel = "Episodes", ylabel = "One Step Policy Difference", fontfamily="Computer Modern")
     plot!(1:length(policy_diffs_dict["5_100"]), policy_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$")
@@ -189,7 +201,6 @@ function PlotRLConvergenceResults(actionsMap::Dict)
             push!(q_diffs_dict, string(num_state) * "_" * string(V) => q_diffs)
         end
     end
-    # q_diffs_plots = plot(1:length(q_diffs_dict["5_100"]), q_diffs_dict["5_100"], fillcolor = :blue, linecolor = :blue, label = "T,I,B,W = 5, Volume = 200", legend = :topleft, fg_legend = :transparent, legendfontsize = 4, guidefontsize = 5, tickfontsize = 5, xlabel = "Episodes", ylabel = "Q-matrix Differences (T,I,B,W = 5)", title = "1 Step Q-matrix Policy Differences", right_margin = 18mm)
     
     q_diffs_plots = plot(1:length(q_diffs_dict["5_200"]), q_diffs_dict["5_200"], ylims = (0, 150000), fillcolor = :blue, linecolor = :blue, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(200 * 430) * raw"}$", legend = :topleft, fg_legend = :transparent, xlabel = "Episodes", ylabel = raw"One Step Q-matrix Difference ($\mathrm{n_{T},n_{I},n_{S},n_{V} = 5}$)", legendfontsize = 6, guidefontsize = 8, tickfontsize = 7, right_margin = 25mm, fontfamily="Computer Modern")
     plot!(1:length(q_diffs_dict["5_100"]), q_diffs_dict["5_100"], fillcolor = :red, linecolor = :red, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} = 5, \;\; X_{0} =} {" * string(100 * 430) * raw"}$", legend = :topleft, fg_legend = :transparent)
@@ -209,7 +220,7 @@ end
 
 #----- State-action convergence -----# 
 function StateActionConvergence(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap::Dict)
-    # TODO: Make file saving better with names
+
     n = length(l)
 
     # get max number of states (last iteration states)
@@ -236,14 +247,14 @@ function StateActionConvergence(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int
     savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/StateActionConvergence_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
 end
-A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
-maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
-actions = GenerateActions(A, maxVolunmeIncrease)
-numT = I = B = W = 5                    # number of time, inventory, spread, volume states 
-V = 50
-@time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
-n = length(l)
-StateActionConvergence(l, numT, I, B, W, A, V, actions)
+# A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
+# maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
+# actions = GenerateActions(A, maxVolunmeIncrease)
+# numT = I = B = W = 5                    # number of time, inventory, spread, volume states 
+# V = 50
+# @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# n = length(l)
+# StateActionConvergence(l, numT, I, B, W, A, V, actions)
 # #---------------------------------------------------------------------------------------------------
 
 #----- Given a Q-matrix get the greedy policy -----# 
@@ -258,7 +269,7 @@ end
 
 #----- Visualize the a single agents policy -----# 
 function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap::Dict)
-    # TODO: Make file saving better with names
+
     P = GetPolicy(Q)
     plots = []
     inc = 1
@@ -288,7 +299,6 @@ function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64,
                 ylabel = "Spread"
             end
             h = heatmap(1:B, 1:W, M, xlabel = xlabel, ylabel = ylabel, c = cgrad(:seismic, [0, 0.50, 0.78, 1]), clim = (-1, actionsMap[A]), guidefontsize = 4, tick_direction = :out, legend = false, tickfontsize = 4, margin = -1mm)
-            # annotate!(h, [(j, i, text(M[i,j], 2,:black, :center)) for i in 1:B for j in 1:W])
             push!(plots, h)
         end
     end
@@ -311,7 +321,7 @@ end
 
 #----- Agents Actions per State Value (averaged ove other states) -----# 
 function AverageActionsPerStateValue(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, actionsMap::Dict)
-    # TODO: Make file saving better with names
+
     states = collect(keys(Q))
 
     # get average actions per time value
@@ -362,7 +372,7 @@ end
 
 #----- Percent Correct Actions -----# 
 function PlotAverageActionsOverTime(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap::Dict)
-    # TODO: Set cutoffs related to state space size, do all agents at same time, update file IO
+
     n = length(l)
     
     # get the average actions
@@ -401,11 +411,8 @@ function PlotAverageActionsOverTime(l::Dict, numT::Int64, I::Int64, B::Int64, W:
             highinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[2] >= 7 && x[1] > 0, states)])
             lowinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[2] <= 4 && x[1] > 0, states)])
 
-            highvol_lowspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] >= 7 && x[3] <= 4 && x[1] > 0, states)]) # 5 => [l=2,h=4], 10 => [l=4,h=7] x[1] <= 2 && 
-            lowvol_highspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] <= 4 && x[3] >= 6 && x[1] > 0, states)]) #   x[1] <= 3 && \
-            # println(length(highvol_lowspr))
-            # println(length(lowvol_highspr))
-            # println()
+            highvol_lowspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] >= 7 && x[3] <= 4 && x[1] > 0, states)]) 
+            lowvol_highspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] <= 4 && x[3] >= 6 && x[1] > 0, states)]) 
 
             hightime_highinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[1] >= 7 && x[2] >= 7 && x[1] > 0, states)]) 
             lowtime_lowinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[1] <= 4 && x[2] <= 4 && x[1] > 0, states)]) 
@@ -461,11 +468,8 @@ function PlotAverageActionsOverTime(l::Dict, numT::Int64, I::Int64, B::Int64, W:
             highinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[2] >= 4 && x[1] > 0, states)])
             lowinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[2] <= 2 && x[1] > 0, states)])
 
-            highvol_lowspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] >= 4 && x[3] <= 2 && x[1] > 0, states)]) # 5 => [l=2,h=4], 10 => [l=4,h=7] x[1] <= 2 && 
-            lowvol_highspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] <= 2 && x[3] >= 3 && x[1] > 0, states)]) #   x[1] <= 3 && \
-            # println(length(highvol_lowspr))
-            # println(length(lowvol_highspr))
-            # println()
+            highvol_lowspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] >= 4 && x[3] <= 2 && x[1] > 0, states)]) 
+            lowvol_highspr = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[4] <= 2 && x[3] >= 3 && x[1] > 0, states)])
 
             hightime_highinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[1] >= 4 && x[2] >= 4 && x[1] > 0, states)]) 
             lowtime_lowinv = getindex.(Ref(l[i]["Q"]), states[findall(x -> x[1] <= 2 && x[2] <= 2 && x[1] > 0, states)]) 
@@ -565,7 +569,6 @@ function PlotVolumeTragectory(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64
         push!(actions1, action)
     end
     pi1 = plot(1:l[1]["NumberActions"], getindex.(Ref(actionsMap), actions1) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = raw"Episode 1 ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
-    # savefig(pi1, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/ActionsIteration_1_V" * string(V) * "_S" * string(numT) * "_430.pdf")
     
     actionsN = Vector{Float64}()
     n = 1000
@@ -722,9 +725,3 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------#
-
-
-# l = load(path_to_files * "Data/RL/Training/Results0.1.jld")
-# println(l["1"]["TotalReward"]) # 5.39204984e8
-# println(l["100"]["TotalReward"]) # 5.99198636e8
-# 5.58028675e8 (random 2, did not fully liquidate (9000)), 5.90548879e8 (random 4, fully liquidated)

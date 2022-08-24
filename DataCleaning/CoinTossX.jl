@@ -1,15 +1,15 @@
 #=
 DataCleaning:
-- Julia version: 1.5.3
-- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, Matthew Dicks
+- Julia version: 1.7.1
+- Authors: Ivan Jericevich, Patrick Chang, Tim Gebbie, (some edits and bug fixes Matthew Dicks)
 - Function: Clean CoinTossX simulated data into L1LOB data for stylized fact analysis as well as visualisation of HFT time-series
 - Structure:
     1. Supplementary functions
     2. Clean raw data into L1LOB format
     3. Plot simulation results
 - Examples:
-    depthProfile = CleanData("Raw")
-    VisualiseSimulation("TAQ", "L1LOB"; startTime = DateTime("2021-07-16T12:37:00.672"), endTime = DateTime("2021-07-16T12:37:42.260"))
+    CleanData("Raw", initialization = false)
+    VisualiseSimulation("TAQ", "L1LOB")
 =#
 using CSV, DataFrames, Dates, Plots, Plots.PlotMeasures, Tables, ProgressMeter
 #---------------------------------------------------------------------------------------------------
@@ -120,28 +120,12 @@ Output:
 =#
 function ProcessMarketOrder!(file::IOStream, order::DataFrameRow, nextOrder::Symbol, best::Best, contraBest::Best, lob::Dict{Int64, Order}, side::Int64)
     contraOrder = lob[order.OrderId] # Extract order on contra side
-    # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
-    #     println()
-    #     println(order.OrderId)
-    #     println(order.Volume)
-    #     println(contraOrder.Volume)
-    #     println(best.Volume)
-    #     println(best.IDs)
-    #     println(contraBest.Volume)
-    # end
     if order.Volume == best.Volume # Trade filled best - remove from LOB, and update best
         delete!(lob, order.OrderId) # Remove the order from the LOB
         if !isempty(lob) # If the LOB is non empty find the best
             bestPrice = side * maximum(x -> side * x.Price, values(lob)) # Find the new best price (bid => side == 1 so find max price) (ask => side == -1 so find min price)
             indeces = [k for (k, v) in lob if v.Price == bestPrice] # Find the order ids of the best
             best.Price = bestPrice; best.Volume = sum(lob[i].Volume for i in indeces); best.IDs = indeces # Update the best
-            # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
-            #     println("New Indeces")
-            #     for i in indeces
-            #         println("Id: ", i, " Volume: ", lob[i].Volume)
-            #     end
-            #     println()
-            # end
         else # If the LOB is empty remove best
             best.Price = 0; best.Volume = 0; best.IDs = Vector{Int64}()
         end
@@ -149,17 +133,6 @@ function ProcessMarketOrder!(file::IOStream, order::DataFrameRow, nextOrder::Sym
         if order.Volume == contraOrder.Volume # Trade filled contra order - remove order from LOB, remove order from best, and update best
             delete!(lob, order.OrderId)
             best.Volume -= order.Volume; best.IDs = setdiff(best.IDs, order.OrderId)
-            # if (order.OrderId >= 9578) && (order.OrderId <= 9615)
-            #     println("Here")
-            #     println(order.OrderId)
-            #     println(order.Volume)
-            #     println(contraOrder.Volume)
-            #     println(best.Volume)
-            #     println(best.IDs)
-            #     println(contraBest.Volume)
-            #     println("here2")
-            #     println()
-            # end
         else # Trade partially filled contra order - update LOB, update best
             lob[order.OrderId].Volume -= order.Volume
             best.Volume -= order.Volume
@@ -218,8 +191,6 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1
     DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])
     if !isempty(times) orders.DateTime = zeros(Float64, nrow(orders)) end; orders.Imbalance = zeros(Union{Missing, Float64}, nrow(orders)) # Calculate the order imbalance in the LOB
-    # traders = CSV.File("../Data/Trader.csv", drop = [:TraderId]) |> Tables.matrix |> vec
-    # orders.Trader = traders[orders.Trader] # Map tarder IDs to their label
     bids = Dict{Int64, Order}(); asks = Dict{Int64, Order}() # Both sides of the entire LOB are tracked with keys corresponding to orderIds
     bestBid = Best(0, 0, Vector{Int64}()); bestAsk = Best(0, 0, Vector{Int64}()) # Current best bid/ask is stored in a tuple (Price, vector of Volumes, vector of OrderIds) and tracked
     bidDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7); askDepthProfile = zeros(Union{Int64, Missing}, nrow(orders), 7)
@@ -304,10 +275,6 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
 
                         # Combined sell trade is printed after the last split trade with VWAP price
                         indeces = (findprev(x -> x != orders[i, :Trader], orders.Trader, i) + 1):(i-1)
-                        # println("Current Indeces")
-                        # println(orders[i,:])
-                        # println("Volume: ", orders[indeces, :])
-                        # println()
                         println(file, string(order.Initialization) * "," * string(order.DateTime, ",", round(Int, sum(orders[indeces, :Price] .* orders[indeces, :Volume]) / sum(orders[indeces, :Volume])), ",", sum(orders[indeces, :Volume]), ",Market,1,missing,missing,missing"))
                         
                         # print the updated bests bid due to the trade
@@ -326,7 +293,6 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
                         indeces = (i+1):(findnext(x -> x != orders[i, :Trader], orders.Trader, i) - 1)
                         order.Volume -= sum(orders[indeces, :Volume])
                         if order.Volume > 0
-                            #ProcessLimitOrder!(file, order, bestBid, bestAsk, bids, 1) # Add the order to the lob and update the best if necessary
                             push!(LO_bid_delay, order)
                         end
                     # regular trade or a LO that crossed the spread without clearing one side of the LOB
@@ -409,15 +375,6 @@ function VisualiseSimulation(taqPath::String, l1lobPath::String; format = "pdf",
     suffix = ""
     l1lobPath == "L1LOB" ? suffix = "" : suffix = l1lobPath[6:end]
     savefig(simulation, "../Images/CoinTossX/Simulation" * suffix * "." * format)
-    # Agents
-    # TFSells = filter(x -> string(x.Trader)[1:2] == "TF", orders); TFBuys = filter(x -> string(x.Trader)[1:2] == "TF", orders)
-    # TFAgents = plot(TFSells.RelativeTime, TFSells.Price, seriestype = :scatter, marker = (:red, stroke(:red), :dtriangle, 0.7), label = "Sell (MO)", ylabel = "Price (ticks)", legend = :topleft, legendfontsize = 5, xrotation = 30, fg_legend = :transparent)
-    # plot!(TFAgents, TFBuys.RelativeTime, TFBuys.Price, seriestype = :scatter, marker = (:blue, stroke(:blue), :utriangle, 0.7), label = "Buy (MO)")
-    # savefig(TFAgents, "../Images/TFAgents." * format)
-    # VISells = filter(x -> string(x.Trader)[1:2] == "VI" && x.Type == :Trade, orders); VIBuys = filter(x -> string(x.Trader)[1:2] == "VI" && x.Type == :Trade, orders)
-    # VIAgents = plot(VISells.RelativeTime, VISells.Price, seriestype = :scatter, marker = (:red, stroke(:red), :dtriangle, 0.7), label = "Sell (MO)", ylabel = "Price (ticks)", legend = :topleft, legendfontsize = 5, xrotation = 30, fg_legend = :transparent)
-    # plot!(VIAgents, VIBuys.RelativeTime, VIBuys.Price, seriestype = :scatter, marker = (:blue, stroke(:blue), :utriangle, 0.7), label = "Buy (MO)")
-    # savefig(VIAgents, "../Images/VIAgents." * format)
     println("Simuation visualization complete")
 end
 #---------------------------------------------------------------------------------------------------
