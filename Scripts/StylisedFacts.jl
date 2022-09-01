@@ -207,6 +207,14 @@ function PriceImpact(exchange::String, l1lobPath::String, startTime::DateTime, e
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Modified Cox confidence intervals for log normal distribution -----#
+function LogNormalCI(yBar::Float64, s::Float64, n::Int64)
+    theta_hat = exp(yBar + (s^2)/2)
+    lower = exp(yBar + (s^2)/2 - 2.02 * sqrt((s^2)/n + (s^4)/(2 * (n - 1))))
+    upper = exp(yBar + (s^2)/2 + 2.02 * sqrt((s^2)/n + (s^4)/(2 * (n - 1))))
+    return round(theta_hat, digits = 3), round(lower, digits = 3), round(upper, digits = 3)
+end
+#---------------------------------------------------------------------------------------------------
 
 #----- Get the ADV (traded and limit) volume for CTX -----#
 function ADVCoinTossX(;format = "pdf")
