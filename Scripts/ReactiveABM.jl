@@ -47,7 +47,7 @@ function Listen(receiver, messages_chnl, messages_received)
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            println("------------------- Port: " * message_loc_time)
+            # println("------------------- Port: " * message_loc_time) ########### Add back after testing
         end
     catch e
         if e isa EOFError
@@ -94,6 +94,7 @@ mutable struct RLParameters
     spread_states_df::DataFrame # Stores the spread states for the RL agent
     volume_states_df::DataFrame # Stores the volume states for the RL agent
     type::String           # indicates type of MO the agent will perform if it is a single agent 
+    buyP::Union{Int64,Nothing}           # The price a buy agent thinks the asset will rise to (the reason for buying) 
     ϵ::Float64             # used in epsilon greedy algorithm
     discount_factor::Float64 # used in Q update (discounts future rewards)
     α::Float64             # used in Q update
@@ -167,6 +168,7 @@ mutable struct RL <: Actor{SimulationState}
     done::Bool             # indicates if the trader has traded all the volume
     R::Vector{Float64}   # rewards stored over the course of a single execution
     Q::DefaultDict       # is the Q matrix for the RL agent for a single execution (only add a state-action pair when it is seen for the first time, don't initialize full Q)
+    buyP::Union{Int64,Nothing}         # The price a buy agent thinks the asset will rise to (the reason for buying) 
     prev_state::Vector{Int64}     # stores the previous state for updating of Q
     prev_action::Int64          # stores the previous action for updating of Q
 end
@@ -399,6 +401,9 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     if !(current_time - simulationstate.start_time < simulationstate.parameters.T) 
         return
     end
+    if rlAgent.done
+        return
+    end
 
     # process the RL messages to get traded volume (for the prev state and prev action combination) (for inventory counter) and reward = Σpᵢvᵢ 
     total_volume_traded, sum_price_volume, trade_message = ProcessMessages(simulationstate.rlMessages, rlAgent)
@@ -421,8 +426,16 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # tells the rl agent whether there is inventory to trade or not
     rlAgent.done = done
 
-    # set the reward
-    reward = sum_price_volume
+    println("# -------------------------------------------------- #")
+    println("State: ", state)
+    println("Done: ", rlAgent.done)
+
+    # set the reward (change for buy)
+    # reward = sum_price_volume
+    # if rlAgent.actionType == "Sell"
+    #     reward = -sum_price_volume
+    # end
+    rlAgent.actionType == "Sell" ? reward = sum_price_volume : reward = -sum_price_volume
 
     # # add the store the rewards 
     if rlAgent.prev_action >= 0 
@@ -434,8 +447,16 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         if rlAgent.prev_state[1] == 0 && !(rlAgent.done)
             rlAgent.done = true
             state = [0,0,0,0]
+            # add penalty for the buy RL agent for forgoing profit
+            if rlAgent.actionType == "Buy"
+                reward = reward - (rlAgent.buyP * rlAgent.i)
+            end
         end
     end
+
+    println("Reward: ", reward)
+    println("State: ", state)
+    println("Done: ", rlAgent.done)
 
     # update Q only if an action has been taken in the sim (so after the first iteration of the event loop)
     # note argmax for selling and argmin for buying agents
@@ -453,7 +474,7 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         push!(rlAgent.actions, action) 
     end
 
-    # check remaining time and if non-left trade everything and not in terminal state
+    # check remaining time and if non left  and not in terminal state trade as much as possible
     if remaining_time <= 0
         if !(rlAgent.done)
             action = simulationstate.rlParameters.A
@@ -491,6 +512,10 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
             volatility = true
         end
     end
+
+    println("Action: ", action)
+    println("Action percentage volume: ", action_percentage_volume)
+    println("Order volume: ", order.volume)
 
     # submit order if there are orders on the other side and if the order won't cause a volatility auction and order.volume must be greater than 0
     if (contra) && !(volatility) && (order.volume > 0)
@@ -774,7 +799,21 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         for key in keys(rlParameters.initialQ)
             Q[key] = copy(rlParameters.initialQ[key])
         end
-        rl_traders_vec = map(i -> RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.type, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, Vector{Int64}(), -1.0), 1:rlParameters.Nᵣₗ) 
+        try
+            @assert !((rlParameters.type == "Sell") && !(isnothing(rlParameters.buyP)))
+        catch e
+            close(messages_chnl)
+            # close the Socket (can generate and EOF error in the async task at the end of the sim)
+            close(receiver)
+            # clear LOB and end trading session
+            EndLOB(gateway)
+            # print the error
+            println("[Warning] Can't have a selling agent with a buying price")
+            @error "Something went wrong" exception=(e, catch_backtrace())
+            # return nothing so sensitivity analysis and calibration can stopped
+            return nothing, nothing
+        end
+        rl_traders_vec = map(i -> RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.type, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, rlParameters.buyP, Vector{Int64}(), -1.0), 1:rlParameters.Nᵣₗ) 
     end
 
     # initialize the Subject and subscribe actors to it
@@ -923,6 +962,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     if rlTraders
         println()
         println("Number of Actions = ", length(rl_traders_vec[1].actions))
+        println("Rewards = ", rl_traders_vec[1].R)
         println()
     end
 

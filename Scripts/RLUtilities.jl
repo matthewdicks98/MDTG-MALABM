@@ -206,6 +206,9 @@ function ProcessMessages(messages::Vector{String}, rlAgent::RL)
 
     end
 
+    println("Trade message: ", trade_message)
+    println("Total volume traded: ", total_volume_traded)
+    println("Sum price volume: ", sum_price_volume)
     if total_volume_traded == 0 && sum_price_volume == 0
         return 0, 0, ""
     else
@@ -234,6 +237,8 @@ function GetSpreadState(LOB::LOBState, rlParameters::RLParameters)
     if LOB.sₜ <= 0
         sₙ = 1
     end
+    println("Spread: ", LOB.sₜ)
+    println("Spread state: ", sₙ)
     return sₙ
 end
 function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
@@ -266,6 +271,8 @@ function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
     if v <= 0
         vₙ = 1
     end
+    println("Volume: ", v)
+    println("Volume state: ", vₙ)
     return vₙ
 end
 function GetTimeState(t::Int64, rlParameters::RLParameters)
@@ -292,6 +299,8 @@ function GetTimeState(t::Int64, rlParameters::RLParameters)
     if t <= 0
         tₙ = 0  # this means that we will take an action such that we transition us to the terminal state with probability 1
     end
+    println("Time remaining: ", t)
+    println("Time state: ", tₙ)
     return tₙ
 end
 function GetInventoryState(i::Int64, rlParameters::RLParameters)
@@ -316,6 +325,8 @@ function GetInventoryState(i::Int64, rlParameters::RLParameters)
     if i <= 0
         iₙ = 0 # this will then mean that we are going to return the terminal state, we have stopped trading
     end
+    println("Inventory remaining: ", i)
+    println("Inventory state: ", iₙ)
     return iₙ
 end
 function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters, rlAgent::RL) # t and i are the remaining time and inventory
@@ -347,10 +358,8 @@ function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Flo
     # create and epsilon greedy policy for a given state
     num_actions_state = length(Q[state])
     policy = fill(epsilon / num_actions_state, num_actions_state) # each state has an equal prob of being chosen
-    a_star = nothing
-    if rlAgent.actionType == "Sell" # want to maximize the profit (will throw an error if anything but a buy)
-        a_star = argmax(Q[state]) 
-    end
+    # want to maximize the profit or maximise the negative of the cost 
+    a_star = argmax(Q[state]) 
     # the optimal action will be chosen with this probability
     policy[a_star] = 1 - epsilon + (epsilon / num_actions_state)
     return policy
@@ -371,35 +380,47 @@ function TestRunRLABM()
     σᵥ = 0.041         # 0.0025, 0.01, 0.0175, 0.025
     λmin = 0.0005       # fixed at 0.0005
     λmax = 0.05         # fixed at 0.05
-    γ = Millisecond(1000) # fixed at 1000
+    γ = Millisecond(1000) # fixed at 25000
     T = Millisecond(25000) # fixed at 25000 
-    seed = 8 # 6, 8, 9
+    seed = 1 # 6, 8, 9
 
     parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
     # Rl parameters
     Nᵣₗ = 1                      # num rl agents
     startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
-    rlT = Millisecond(24500)        # execution time for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
-    numT = 10                   # number of time states (T must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
-    V = 50000                     # volume to trade in each execution
-    I = 10                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
+    rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+    numT = 5                    # number of time states (rlT must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
+    V = 43000 # 43000                    # (266/2 * 450) volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
+    I = 5                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
     B = 5                        # number of spread states
     W = 5                        # number of volume states
-    A = 10                       # number of action states
+    A = 9                       # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
+    maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 
-    spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,false,1)
-    maxVolunmeIncrease = 2
+    spread_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/SpreadStates1_S5.csv") |> DataFrame
+    volume_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/VolumeStates1_S5.csv") |> DataFrame
+    # spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,true,1)
     actions = GenerateActions(A, maxVolunmeIncrease)
     actionType = "Sell"
-    ϵ = 0.1            # used in epsilon greedy algorithm
+    buyP = nothing
+    ϵ₀ = 1            # used in epsilon greedy algorithm
     discount_factor = 1 # used in Q update (discounts future rewards)
-    α = 0.5             # used in Q update
+    α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
+    initialQ = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A))
+    numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
+    Ntwap = V / numDecisions
 
-    rlParameters = RLParameters(Nᵣₗ, startTime, rlT, numT, V, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ, discount_factor, α)
+    rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, buyP, ϵ₀, discount_factor, α)
+
+    # rl training parameters
+    # numEpisodes = 2
+    # steps = [75, 175, 50, 100]    # number of steps for each percentage decrease
+    # stepSizes = [0.1, 0.8, 0.09, 0]   # Percentage decrease over the number of steps
+    # iterationsPerWrite = 100
 
     # set the parameters that dictate output
-    print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
+    print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
     write_messages = false                             # Says whether or not the messages data must be written to a file
     write_volume_spread = false
     rlTraders = true
@@ -408,14 +429,14 @@ function TestRunRLABM()
     StartJVM()
     gateway = Login(1,1)
     try 
-        @time simulate(parameters, rlParameters, gateway, rlTraders, print_and_plot, write_messages, write_volume_spread, seed = seed)
+        @time simulate(parameters, rlParameters, gateway, rlTraders, false, print_and_plot, write_messages, write_volume_spread, seed = seed, iteration = 1)
     catch e
         @error "Something went wrong" exception=(e, catch_backtrace())
     finally
         Logout(gateway)
     end
 end
-# TestRunRLABM()
+TestRunRLABM()
 #---------------------------------------------------------------------------------------------------
 
 #----- Train 1 RL selling agent in an ABM -----# 
@@ -498,7 +519,7 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
         Logout(gateway)
         StopCoinTossX()
         # write results to a file
-        @time save(path_to_files * "/Data/RL/Training/Results.jld", "rl_results", rl_results)
+        @time save(path_to_files * "/Data/RL/Training/ResultsTest.jld", "rl_results", rl_results)
     end 
 
 end
@@ -537,6 +558,7 @@ end
 # # spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,true,1)
 # actions = GenerateActions(A, maxVolunmeIncrease)
 # actionType = "Sell"
+# buyP = 12000
 # ϵ₀ = 1            # used in epsilon greedy algorithm
 # discount_factor = 1 # used in Q update (discounts future rewards)
 # α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
@@ -544,7 +566,7 @@ end
 # numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
 # Ntwap = V / numDecisions
 
-# rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α)
+# rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, buyP, ϵ₀, discount_factor, α)
 
 # # rl training parameters
 # numEpisodes = 2
