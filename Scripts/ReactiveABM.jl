@@ -399,6 +399,9 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     if !(current_time - simulationstate.start_time < simulationstate.parameters.T) 
         return
     end
+    if rlAgent.done
+        return
+    end
 
     # process the RL messages to get traded volume (for the prev state and prev action combination) (for inventory counter) and reward = Σpᵢvᵢ 
     total_volume_traded, sum_price_volume, trade_message = ProcessMessages(simulationstate.rlMessages, rlAgent)

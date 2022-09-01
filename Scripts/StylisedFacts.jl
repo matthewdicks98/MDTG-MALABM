@@ -207,6 +207,67 @@ function PriceImpact(exchange::String, l1lobPath::String, startTime::DateTime, e
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Modified Cox confidence intervals for log normal distribution -----#
+function LogNormalCI(yBar::Float64, s::Float64, n::Int64)
+    theta_hat = exp(yBar + (s^2)/2)
+    lower = exp(yBar + (s^2)/2 - 2.02 * sqrt((s^2)/n + (s^4)/(2 * (n - 1))))
+    upper = exp(yBar + (s^2)/2 + 2.02 * sqrt((s^2)/n + (s^4)/(2 * (n - 1))))
+    return round(theta_hat, digits = 3), round(lower, digits = 3), round(upper, digits = 3)
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Get the ADV (traded and limit) volume for CTX -----#
+function ADVCoinTossX(;format = "pdf")
+    traded_volumes = Vector{Int64}()
+    limit_volumes = Vector{Int64}()
+    for i in 1:100
+        filename = "Raw" * string(i)
+        orders = CSV.File(string("../Data/CoinTossX/ADV/SimulationData/" * filename * ".csv"), types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+        replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
+        orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1 # convert -id given by CTX to id
+        DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])
+        push!(limit_volumes, sum(orders[findall(x -> x == :Limit, orders.Type),:Volume]))
+        push!(traded_volumes, sum(orders[findall(x -> x == :Trade, orders.Type),:Volume]))
+    end
+    color = "green"
+    
+    # trade volume distribution
+    LogNormalDistributionTradeVol = Distributions.fit(LogNormal, traded_volumes)
+    fitted_trade_distribution = histogram(traded_volumes, normalize = :pdf, fillcolor = color, linecolor = color, title = "", xlabel = "Trade Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent, fontfamily="Computer Modern")
+    plot!(fitted_trade_distribution, LogNormalDistributionTradeVol, line = (:black, 2), label = "Fitted Normal")
+    qqplot!(fitted_trade_distribution, LogNormal, traded_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.125, 0.065, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
+    savefig(fitted_trade_distribution, string("../Images/CoinTossX/TradeVolumeDistribution.", format))
+    theta_hat_trade, lower_trade, upper_trade = LogNormalCI(LogNormalDistributionTradeVol.μ, LogNormalDistributionTradeVol.σ, length(traded_volumes))
+
+    # limit volume distribution
+    LogNormalDistributionLimitVol = Distributions.fit(LogNormal, limit_volumes)
+    fitted_limit_distribution = histogram(limit_volumes, normalize = :pdf, fillcolor = color, nbins = 20, linecolor = color, title = "", xlabel = "Limit Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent, fontfamily="Computer Modern")
+    plot!(fitted_limit_distribution, LogNormalDistributionLimitVol, line = (:black, 2), label = "Fitted Normal")
+    qqplot!(fitted_limit_distribution, LogNormal, limit_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.625, 0.265, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
+    savefig(fitted_limit_distribution, string("../Images/CoinTossX/LimitVolumeDistribution.", format))
+    theta_hat_limit, lower_limit, upper_limit = LogNormalCI(LogNormalDistributionLimitVol.μ, LogNormalDistributionLimitVol.σ, length(limit_volumes))
+
+    # write results to a file
+    adv_res = DataFrame(OrderedDict(:Type => ["Trade", "Limit"], :Lower => [lower_trade, lower_limit], :ThetaHat => [theta_hat_trade, theta_hat_limit], :Upper => [upper_trade, upper_limit], :ADV => [round(mean(traded_volumes), digits = 3), round(mean(limit_volumes), digits = 3)]))
+    CSV.write("../Data/CoinTossX/ADV/ADVResults.csv", adv_res)
+end
+# ADVCoinTossX()
+#---------------------------------------------------------------------------------------------------
+
+#----- Get the traded and limit volume for JSE -----#
+function ADVJSE()
+    date = DateTime("2019-07-08")
+    startTime = date + Hour(9) + Minute(1)
+    endTime = date + Hour(16) + Minute(50)
+    filename = "JSERAWTAQNPN"
+    orders = CSV.read("../Data/JSE/JSERAWTAQNPN.csv", types = Dict(:type => Symbol), DataFrame)
+    filter!(x -> startTime <= x.times && x.times < endTime, orders)
+    adv_res = DataFrame(OrderedDict(:Type => ["Trade", "Limit"], :Volume => [sum(orders[findall(x -> x == :TRADE, orders.type),:size]), sum(orders[findall(x -> x == :ASK || x == :BID, orders.type),:size])]))
+    CSV.write("../Data/JSE/ADVResults.csv", adv_res)
+end
+# ADVJSE()
+#---------------------------------------------------------------------------------------------------
+
 #----- RL agents trade-sign autocorrelations (single figure, final agents) -----#
 function RLTradeSignAutocorrelation(stateSpaceSizes::Vector{Int64}, initialInventories::Vector{Int64}; format::String = "pdf")
     count = 1
