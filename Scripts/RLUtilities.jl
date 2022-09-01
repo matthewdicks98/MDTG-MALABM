@@ -371,35 +371,44 @@ function TestRunRLABM()
     σᵥ = 0.041         # 0.0025, 0.01, 0.0175, 0.025
     λmin = 0.0005       # fixed at 0.0005
     λmax = 0.05         # fixed at 0.05
-    γ = Millisecond(1000) # fixed at 1000
+    γ = Millisecond(1000) # fixed at 25000
     T = Millisecond(25000) # fixed at 25000 
-    seed = 8 # 6, 8, 9
+    seed = 1 # 6, 8, 9
 
     parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
     # Rl parameters
     Nᵣₗ = 1                      # num rl agents
     startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
-    rlT = Millisecond(24500)        # execution time for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
-    numT = 10                   # number of time states (T must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
-    V = 50000                     # volume to trade in each execution
-    I = 10                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
+    rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+    numT = 5                    # number of time states (rlT must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
+    V = 43000                  # volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
+    I = 5                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
     B = 5                        # number of spread states
     W = 5                        # number of volume states
-    A = 10                       # number of action states
+    A = 9                       # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
+    maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 
-    spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,false,1)
-    maxVolunmeIncrease = 2
+    spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,true,1)
     actions = GenerateActions(A, maxVolunmeIncrease)
     actionType = "Sell"
-    ϵ = 0.1            # used in epsilon greedy algorithm
+    ϵ₀ = 1            # used in epsilon greedy algorithm
     discount_factor = 1 # used in Q update (discounts future rewards)
-    α = 0.5             # used in Q update
+    α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
+    initialQ = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A))
+    numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
+    Ntwap = V / numDecisions
 
-    rlParameters = RLParameters(Nᵣₗ, startTime, rlT, numT, V, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ, discount_factor, α)
+    rlParameters = RLParameters(Nᵣₗ, initialQ, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α)
+
+    # rl training parameters
+    # numEpisodes = 2
+    # steps = [75, 175, 50, 100]    # number of steps for each percentage decrease
+    # stepSizes = [0.1, 0.8, 0.09, 0]   # Percentage decrease over the number of steps
+    # iterationsPerWrite = 100
 
     # set the parameters that dictate output
-    print_and_plot = true                    # Print out useful info about sim and plot simulation time series info
+    print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
     write_messages = false                             # Says whether or not the messages data must be written to a file
     write_volume_spread = false
     rlTraders = true
@@ -408,7 +417,7 @@ function TestRunRLABM()
     StartJVM()
     gateway = Login(1,1)
     try 
-        @time simulate(parameters, rlParameters, gateway, rlTraders, print_and_plot, write_messages, write_volume_spread, seed = seed)
+        @time simulate(parameters, rlParameters, gateway, rlTraders, false, print_and_plot, write_messages, write_volume_spread, seed = seed, iteration = 1)
     catch e
         @error "Something went wrong" exception=(e, catch_backtrace())
     finally
