@@ -25,8 +25,9 @@ import Statistics.var
 
 # set working directory (the path to the Scripts/StylisedFacts.jl file)
 path_to_folder = "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/Scripts"
+path_to_files =  "/home/matt/Desktop/Advanced_Analytics/Dissertation/Code/MDTG-MALABM/"
 cd(path_to_folder)
-include("Moments.jl")
+include("Moments.jl"); include(path_to_files * "DataCleaning/CoinTossX.jl")
 
 #----- Generate stylized facts -----#
 function StylizedFacts(exchange::String, l1lobPath::String, startTime::DateTime, endTime::DateTime; format::String = "pdf")
@@ -348,39 +349,77 @@ function LogNormalCI(yBar::Float64, s::Float64, n::Int64)
 end
 #---------------------------------------------------------------------------------------------------
 
+#----- Clean raw message data -----#
+function CleanRawADVData()
+    println("-------------------------------- Cleaning raw message data --------------------------------")
+
+    cleanDirPath = path_to_files * "Data/CoinTossX"
+    raw_data_dir = path_to_files * "Data/CoinTossX/ADV/SimulationData"
+    for iteration in 1:100
+        rawDataFilePath = path_to_files * "Data/CoinTossX/ADV/SimulationData/Raw" * string(iteration) * ".csv"
+
+        # copy raw data file to cleaning directory
+        run(`cp $rawDataFilePath $cleanDirPath`)
+
+        # clean the data
+        CleanData("Raw" * string(iteration), initialization = false)
+
+        # get the l1lob data and then move L1LOB data file back to original directory
+        l1lob_file_path = cleanDirPath * "/L1LOB" * string(iteration) * ".csv"
+        run(`mv $l1lob_file_path $raw_data_dir`)
+
+        # move depth profile data to original directory
+        depth_file_path = cleanDirPath * "/DepthProfileData" * string(iteration) *".csv"
+
+        # delete depth profile, TAQ data and Raw data file from cleaning directory
+        taq_file_path =  cleanDirPath * "/TAQ" * string(iteration) *".csv"
+        raw_file_path = cleanDirPath * "/Raw" * string(iteration) *".csv"
+        run(`rm $taq_file_path`)
+        run(`rm $raw_file_path`)
+        run(`rm $depth_file_path`)
+    end
+
+end
+# CleanRawADVData()
+#---------------------------------------------------------------------------------------------------
+
 #----- Get the ADV (traded and limit) volume for CTX -----#
 function ADVCoinTossX(;format = "pdf")
     traded_volumes = Vector{Int64}()
     limit_volumes = Vector{Int64}()
+    num_limits = Vector{Int64}()
+    num_trades = Vector{Int64}()
+
     for i in 1:100
-        filename = "Raw" * string(i)
-        orders = CSV.File(string("../Data/CoinTossX/ADV/SimulationData/" * filename * ".csv"), types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
-        replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
-        orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1 # convert -id given by CTX to id
-        DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])
-        push!(limit_volumes, sum(orders[findall(x -> x == :Limit, orders.Type),:Volume]))
-        push!(traded_volumes, sum(orders[findall(x -> x == :Trade, orders.Type),:Volume]))
+        filename = "L1LOB" * string(i)
+        orders = CSV.File(string("../Data/CoinTossX/ADV/SimulationData/" * filename * ".csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+        push!(limit_volumes, sum(collect(skipmissing(orders[findall(x -> x == :Limit, orders.Type),:Volume]))))
+        push!(traded_volumes, sum(collect(skipmissing(orders[findall(x -> x == :Market, orders.Type),:Volume])))) 
+        push!(num_trades, length(collect(skipmissing(orders[findall(x -> x == :Market, orders.Type),:Volume]))))
+        push!(num_limits, length(collect(skipmissing(orders[findall(x -> x == :Limit, orders.Type),:Volume]))))
     end
+    
     color = "green"
     
     # trade volume distribution
-    LogNormalDistributionTradeVol = Distributions.fit(LogNormal, traded_volumes)
+    LogNormalDistributionTradeVol = Distributions.fit(Gamma, traded_volumes)
     fitted_trade_distribution = histogram(traded_volumes, normalize = :pdf, fillcolor = color, linecolor = color, title = "", xlabel = "Trade Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent, fontfamily="Computer Modern")
-    plot!(fitted_trade_distribution, LogNormalDistributionTradeVol, line = (:black, 2), label = "Fitted Normal")
-    qqplot!(fitted_trade_distribution, LogNormal, traded_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.125, 0.065, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
+    plot!(fitted_trade_distribution, LogNormalDistributionTradeVol, line = (:black, 2), label = "Fitted Log-Normal")
+    qqplot!(fitted_trade_distribution, Gamma, traded_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.125, 0.065, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
     savefig(fitted_trade_distribution, string("../Images/CoinTossX/TradeVolumeDistribution.", format))
-    theta_hat_trade, lower_trade, upper_trade = LogNormalCI(LogNormalDistributionTradeVol.μ, LogNormalDistributionTradeVol.σ, length(traded_volumes))
+    # theta_hat_trade, lower_trade, upper_trade = LogNormalCI(LogNormalDistributionTradeVol.μ, LogNormalDistributionTradeVol.σ, length(traded_volumes))
 
     # limit volume distribution
-    LogNormalDistributionLimitVol = Distributions.fit(LogNormal, limit_volumes)
+    LogNormalDistributionLimitVol = Distributions.fit(Gamma, limit_volumes)
     fitted_limit_distribution = histogram(limit_volumes, normalize = :pdf, fillcolor = color, nbins = 20, linecolor = color, title = "", xlabel = "Limit Volume", ylabel = "Probability Density", label = "Empirical", legendtitle = "Distribution", legend = :topright, legendfontsize = 5, legendtitlefontsize = 7, fg_legend = :transparent, fontfamily="Computer Modern")
-    plot!(fitted_limit_distribution, LogNormalDistributionLimitVol, line = (:black, 2), label = "Fitted Normal")
-    qqplot!(fitted_limit_distribution, LogNormal, limit_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.625, 0.265, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
+    plot!(fitted_limit_distribution, LogNormalDistributionLimitVol, line = (:black, 2), label = "Fitted Log-Normal")
+    qqplot!(fitted_limit_distribution, Gamma, limit_volumes, xlabel = "Log-Normal theoretical quantiles", ylabel = "Sample quantiles", linecolor = :black, guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, marker = (color, stroke(color), 3), legend = false, inset = (1,bbox(0.625, 0.265, 0.37, 0.435)), subplot = 2, title = "Log-Normal QQ-plot", titlefontsize = 7) # standard bbox(0.125, 0.03, 0.37, 0.4), With title bbox(0.125, 0.065, 0.37, 0.435)
     savefig(fitted_limit_distribution, string("../Images/CoinTossX/LimitVolumeDistribution.", format))
-    theta_hat_limit, lower_limit, upper_limit = LogNormalCI(LogNormalDistributionLimitVol.μ, LogNormalDistributionLimitVol.σ, length(limit_volumes))
+    # theta_hat_limit, lower_limit, upper_limit = LogNormalCI(LogNormalDistributionLimitVol.μ, LogNormalDistributionLimitVol.σ, length(limit_volumes))
 
     # write results to a file
-    adv_res = DataFrame(OrderedDict(:Type => ["Trade", "Limit"], :Lower => [lower_trade, lower_limit], :ThetaHat => [theta_hat_trade, theta_hat_limit], :Upper => [upper_trade, upper_limit], :ADV => [round(mean(traded_volumes), digits = 3), round(mean(limit_volumes), digits = 3)]))
+    adv_res = DataFrame(OrderedDict(:Type => ["TradeVolume", "LimitVolume", "TradeCount", "LimitCount"], :Lower => [quantile(traded_volumes, 0.025), quantile(limit_volumes, 0.025), quantile(num_trades, 0.025), quantile(num_limits, 0.025)], :Mean => [round(mean(traded_volumes), digits = 3), round(mean(limit_volumes), digits = 3), mean(num_trades), mean(num_limits)], :Upper => [quantile(traded_volumes, 0.975), quantile(limit_volumes, 0.975), quantile(num_trades, 0.975), quantile(num_limits, 0.975)]))
+    println(adv_res)
     CSV.write("../Data/CoinTossX/ADV/ADVResults.csv", adv_res)
 end
 # ADVCoinTossX()
@@ -392,9 +431,10 @@ function ADVJSE()
     startTime = date + Hour(9) + Minute(1)
     endTime = date + Hour(16) + Minute(50)
     filename = "JSERAWTAQNPN"
-    orders = CSV.read("../Data/JSE/JSERAWTAQNPN.csv", types = Dict(:type => Symbol), DataFrame)
-    filter!(x -> startTime <= x.times && x.times < endTime, orders)
-    adv_res = DataFrame(OrderedDict(:Type => ["Trade", "Limit"], :Volume => [sum(orders[findall(x -> x == :TRADE, orders.type),:size]), sum(orders[findall(x -> x == :ASK || x == :BID, orders.type),:size])]))
+    orders = CSV.read("../Data/JSE/L1LOB.csv", types = Dict(:Type => Symbol, :DateTime => DateTime), DataFrame)
+    filter!(x -> startTime <= x.DateTime && x.DateTime < endTime, orders)
+    adv_res = DataFrame(OrderedDict(:Type => ["TradeVolume", "LimitVolume", "TradeCount", "LimitCount"], :VolumeAndCount => [sum(orders[findall(x -> x == :Market, orders.Type),:Volume]), sum(orders[findall(x -> x == :Limit, orders.Type),:Volume]), length(orders[findall(x -> x == :Market, orders.Type),:Volume]), length(orders[findall(x -> x == :Limit, orders.Type),:Volume])]))
+    println(adv_res)
     CSV.write("../Data/JSE/ADVResults.csv", adv_res)
 end
 # ADVJSE()

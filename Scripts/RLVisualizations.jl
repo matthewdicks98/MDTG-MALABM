@@ -255,7 +255,7 @@ end
 # @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
 # n = length(l)
 # StateActionConvergence(l, numT, I, B, W, A, V, actions)
-# #---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------
 
 #----- Given a Q-matrix get the greedy policy -----# 
 function GetPolicy(Q::Dict)
@@ -306,17 +306,19 @@ function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64,
     colorbar = heatmap([-1;getindex.(Ref(actionsMap), 1:A)].*ones(A+1,1), title = "Actions", titlefontsize = 7, ylabel = "Inventory", ymirror = true, guidefontsize = 10, tickfontsize = 5, c = cgrad(:seismic, [0, 0.50, 0.78, 1]), legend=:none, xticks=:none, yticks=(1:1:(A+1), string.([-1;getindex.(Ref(actionsMap), 1:A)])), y_foreground_color_axis=:white, y_foreground_color_border=:white)
     empty = plot(title = "Time", titlefontsize = 10, legend=false,grid=false, foreground_color_axis=:white, foreground_color_border=:white, ticks = :none)
     p = plot(colorbar, plots..., empty, layout = l, fontfamily = "Computer Modern")
-    savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/PolicyPlot_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    # savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/PolicyPlot_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(p, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/PolicyPlot_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
 end
 # A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
 # maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 # actions = GenerateActions(A, maxVolunmeIncrease)
-# V = 50
+# V = 100
 # numT = I = B = W = 5                    # number of time, inventory, spread, volume states
-# @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# # @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# @time l = load(path_to_files * "Data/RL/Training/ResultsTest_Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25.jld")["rl_results"]
 # n = length(l)
-# PolicyVisualization(l[1000]["Q"], numT, I, B, W, A, V, actions)
+# PolicyVisualization(l[200]["Q"], numT, I, B, W, A, V, actions)
 # #---------------------------------------------------------------------------------------------------
 
 #----- Agents Actions per State Value (averaged ove other states) -----# 
@@ -521,41 +523,41 @@ function PlotAverageActionsOverTime(l::Dict, numT::Int64, I::Int64, B::Int64, W:
     # plot the volume  
     v = plot(avg_actions_highvol, label = "High Volume", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowvol, label = "Low Volume", color = :red, fg_legend = :transparent)
-    savefig(v, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(v, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the spread
     s = plot(avg_actions_lowspr, label = "Narrow Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_highspr, label = "Wide Spread", color = :red, fg_legend = :transparent)
-    savefig(s, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionSpread_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(s, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionSpread_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the time
     t = plot(avg_actions_hightime, label = "More remaining time", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowtime, label = "Less remaining time", color = :red, fg_legend = :transparent)
-    savefig(t, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionTime_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(t, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionTime_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the inventory
     i = plot(avg_actions_highinv, label = "More remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowinv, label = "Less remaining inventory", color = :red, fg_legend = :transparent)
-    savefig(i, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(i, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the spread vs volume interaction 
     sv = plot(avg_actions_highvol_lowspr, label = "High Volume, Narrow Spread", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowvol_highspr, label = "Low Volume, Wide Spread", color = :red, fg_legend = :transparent)
-    savefig(sv, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionSpreadVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(sv, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionSpreadVolume_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
     # plot the time and inventory interactions
     ti = plot(avg_actions_hightime_highinv, label = "More remaining time, more remaining inventory", color = :blue, legend = legend_symbol, fg_legend = :transparent, xlabel = "Episodes", ylabel = "Average Action", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", titlefontsize = 11, fontfamily = "Computer Modern")
     plot!(avg_actions_lowtime_lowinv, label = "Less remaining time, less remaining inventory", color = :red, fg_legend = :transparent)
-    savefig(ti, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/AverageActionTimeInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(ti, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/AverageActionTimeInventory_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 
 
 end
 # A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
 # maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 # actions = GenerateActions(A, maxVolunmeIncrease)
-# numT = I = B = W = 10                    # number of time, inventory, spread, volume states 
-# V = 200
-# @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# numT = I = B = W = 5                    # number of time, inventory, spread, volume states 
+# V = 100
+# @time l = load(path_to_files * "Data/RL/Training/ResultsTest_Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25.jld")["rl_results"]
 # n = length(l)
 # PlotAverageActionsOverTime(l, numT, I, B, W, A, V, actions)
 #---------------------------------------------------------------------------------------------------
@@ -571,24 +573,38 @@ function PlotVolumeTragectory(l::Dict, numT::Int64, I::Int64, B::Int64, W::Int64
     pi1 = plot(1:l[1]["NumberActions"], getindex.(Ref(actionsMap), actions1) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = raw"Episode 1 ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
     
     actionsN = Vector{Float64}()
-    n = 1000
+    n = 200
     for action in l[n]["Actions"]
         push!(actionsN, action)
     end
     piN = plot(1:l[n]["NumberActions"], getindex.(Ref(actionsMap), actionsN) .* V, size = (800, 400), seriestype = :line, fillcolor = :blue, linecolor = :blue, legend = false, xlabel = "Action Number", ylabel = "Action volume", title = raw"Episode " * string(n) * raw" ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", titlefontsize = 9, guidefontsize = 8, tickfontsize = 8, left_margin = 5mm, bottom_margin = 5mm)
     l = @layout([a; b])
     p = plot(pi1, piN, layout = l, fontfamily = "Computer Modern")
-    savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/ActionVolumeIteration_" * string(n) * "_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    # savefig(p, path_to_files * "/Images/RL/alpha0.1_iteration1000_V" * string(V) * "_S" * string(numT) * "_430/ActionVolumeIteration_" * string(n) * "_V" * string(V) * "_S" * string(numT) * "_430.pdf")
+    savefig(p, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/ActionVolumeIteration_" * string(n) * "_V" * string(V) * "_S" * string(numT) * "_430.pdf")
 end
 # A = 9                          # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
 # maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 # actions = GenerateActions(A, maxVolunmeIncrease)
-# numT = I = B = W = 10                    # number of time, inventory, spread, volume states 
-# V = 200
-# @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# numT = I = B = W = 5                    # number of time, inventory, spread, volume states 
+# V = 100
+# # @time l = load(path_to_files * "Data/RL/Training/Results_alpha0.1_iterations1000_V" * string(V) * "_S" * string(numT) * "_430.jld")["rl_results"]
+# @time l = load(path_to_files * "Data/RL/Training/ResultsTest_Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25.jld")["rl_results"]
 # n = length(l)
 # PlotVolumeTragectory(l, numT, I, B, W, A, V, actions)
-#---------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------
+
+# @time l = load(path_to_files * "Data/RL/Training/ResultsTest_Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25.jld")["rl_results"]
+# rewards = [l[i]["TotalReward"] for i in 1:200]
+# # rewards = rewards[findall(x -> abs(x) < 5000000, rewards)]
+# p = plot(rewards, fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", legendfontsize = 4, fg_legend = :transparent, fontfamily="Computer Modern")
+# # hline!(p, [(-10000 + 10100) * 43000], color = :black)
+# savefig(p, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/Reward.pdf")
+
+# num_trades = [l[i]["NumberTrades"] for i in 1:200]
+# p = plot(num_trades, fillcolor = :red, linecolor = :red, legend = :outertopright, xlabel = "Episodes", legendfontsize = 4, fg_legend = :transparent, fontfamily="Computer Modern")
+# # hline!(p, [(-10000 + 10100) * 43000], color = :black)
+# savefig(p, path_to_files * "/Images/RL/Slippage_Sell_ExpTIDivXPenalty_RLOutVWAP_E200_alpha0.5_lambda0.001_gamma0.25/NumTrades.pdf")
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------#
 

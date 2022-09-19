@@ -132,6 +132,9 @@ mutable struct SimulationState
     initializing::Bool
     event_counter::Int64
     start_time::DateTime
+    trade_vwap::Float64 # stores the vwap price for all the trades (used in RL cost function)
+    total_trade_volume::Int64 # stores the total traded volume
+    total_price_volume::Int64 # Σpᵢvᵢ
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -171,6 +174,9 @@ mutable struct RL <: Actor{SimulationState}
     buyP::Union{Int64,Nothing}         # The price a buy agent thinks the asset will rise to (the reason for buying) 
     prev_state::Vector{Int64}     # stores the previous state for updating of Q
     prev_action::Int64          # stores the previous action for updating of Q
+    trade_vwap::Float64           # stores the vwap for the agents stratergy
+    total_trade_volume::Int64   # stores total volume traded
+    total_price_volume::Int64   # stores Σpᵢvᵢ
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -419,6 +425,7 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     rl_start_time = (simulationstate.start_time + simulationstate.rlParameters.startTime)
     rl_end_time = (rl_start_time + simulationstate.rlParameters.T)
     remaining_time = (rl_end_time - current_time).value
+    past_time = ((current_time - rl_start_time).value) / 1000
 
     # get the new state
     state, done = GetState(simulationstate.LOB, remaining_time, rlAgent.i, simulationstate.rlParameters, rlAgent)
@@ -426,37 +433,69 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # tells the rl agent whether there is inventory to trade or not
     rlAgent.done = done
 
-    println("# -------------------------------------------------- #")
-    println("State: ", state)
-    println("Done: ", rlAgent.done)
+    # println("# -------------------------------------------------- #")
+    # println("State: ", state)
+    # println("Done: ", rlAgent.done)
 
     # set the reward (change for buy)
     # reward = sum_price_volume
     # if rlAgent.actionType == "Sell"
     #     reward = -sum_price_volume
     # end
-    rlAgent.actionType == "Sell" ? reward = sum_price_volume : reward = -sum_price_volume
 
-    # # add the store the rewards 
-    if rlAgent.prev_action >= 0 
-        push!(rlAgent.R, reward) 
+    # update VWAP price for rl agent trades (only update if there has been a trade with more than 0 volume executed)
+    if total_volume_traded > 0
+        rlAgent.trade_vwap = (1 / (rlAgent.total_trade_volume + total_volume_traded)) * (rlAgent.total_price_volume + sum_price_volume)
+        rlAgent.total_trade_volume += total_volume_traded
+        rlAgent.total_price_volume += sum_price_volume # Σpᵢvᵢ
     end
+
+    # rlAgent.actionType == "Sell" ? reward = sum_price_volume : reward = -sum_price_volume - rlAgent.buyP * rlAgent.i # (Approach 4.2) -sum_price_volume + rlAgent.buyP * total_volume_traded # (Approach 5) -sum_price_volume - rlAgent.buyP (stand in for C) * rlAgent.i
+    reward = 0
+    lam = 0.003
+    gam = 0.25
+    total_volume_traded == 0 ? a = 1 : a = total_volume_traded
+    rlAgent.i == 0 ? penalty = 0 : penalty = (lam * exp(gam * past_time) * (rlAgent.i/a))
+    # penalty == 1 ? penalty = 0 : penalty = penalty
+    if rlAgent.actionType == "Sell" && simulationstate.trade_vwap > 0 && rlAgent.trade_vwap > 0 # only recompute the reward if vwaps are not 0
+        rlAgent.total_trade_volume > 0 ? reward = (log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4 - penalty : reward = 0 - log(simulationstate.trade_vwap) - 40 # only compute the reward if there has been volume traded
+    elseif rlAgent.actionType == "Buy" && simulationstate.trade_vwap > 0 && rlAgent.trade_vwap > 0
+        rlAgent.total_trade_volume > 0 ? reward = -(log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4 - penalty : reward = 0 - log(simulationstate.trade_vwap) # penalty same as above (change)
+    end
+
+    # println()
+    # println(rlAgent.prev_action)
+    # println(rlAgent.prev_state)
+    # println(total_volume_traded)
+    # println(past_time)
+    # println(rlAgent.i)
+    # println(simulationstate.trade_vwap)
+    # println(rlAgent.trade_vwap)
+    # println((log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4) # set - if it is a buy
+    # println(penalty)
+    # println(reward)
+    # println()
 
     # if the prev state said time is up but there is still remaining volume then penalize the agent for remaining volume, set terminal state and done
     if rlAgent.prev_action >= 0
         if rlAgent.prev_state[1] == 0 && !(rlAgent.done)
             rlAgent.done = true
             state = [0,0,0,0]
-            # add penalty for the buy RL agent for forgoing profit
-            if rlAgent.actionType == "Buy"
-                reward = reward - (rlAgent.buyP * rlAgent.i)
-            end
+            # add penalty for the buy RL agent for forgoing profit (Approach 4.1 => did not work)
+            # if rlAgent.actionType == "Buy"
+            #     reward = reward - (rlAgent.buyP * rlAgent.i)
+            # end
         end
     end
 
-    println("Reward: ", reward)
-    println("State: ", state)
-    println("Done: ", rlAgent.done)
+    # add the store the rewards 
+    if rlAgent.prev_action >= 0 
+        push!(rlAgent.R, reward) 
+    end
+
+    # println("Reward: ", reward)
+    # println("State: ", state)
+    # println("Done: ", rlAgent.done)
 
     # update Q only if an action has been taken in the sim (so after the first iteration of the event loop)
     # note argmax for selling and argmin for buying agents
@@ -467,6 +506,7 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # find the action that minimizes (maximizes) the cost (profit) based on the current state
     policy_probabilities = EpisilonGreedyPolicy(rlAgent.Q, state, simulationstate.rlParameters.ϵ, rlAgent)
     action = sample(Xoshiro(), 1:simulationstate.rlParameters.A, Weights(policy_probabilities), 1)[1] # supply a different rng than the global one so for the same price path different actions can be generated
+    # action = rand(collect(1:9))
     action_percentage_volume = simulationstate.rlParameters.actions[action]
 
     # add the store the rewards 
@@ -512,10 +552,12 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
             volatility = true
         end
     end
-
-    println("Action: ", action)
-    println("Action percentage volume: ", action_percentage_volume)
-    println("Order volume: ", order.volume)
+    # println()
+    # println("Action: ", action)
+    # println("Action percentage volume: ", action_percentage_volume)
+    # println("Order volume: ", order.volume)
+    # println("Remaining inventory: ", rlAgent.i)
+    # println()
 
     # submit order if there are orders on the other side and if the order won't cause a volatility auction and order.volume must be greater than 0
     if (contra) && !(volatility) && (order.volume > 0)
@@ -579,8 +621,10 @@ Rocket.on_next!(subject::Subject, simulationstate::SimulationState) = nextState(
 #---------------------------------------------------------------------------------------------------
 
 #----- Update LOB state -----#
-function UpdateLOBState!(LOB::LOBState, message)
-    # TODO: (1) 
+function UpdateLOBState!(simulationstate::SimulationState, message)
+
+    # extract LOB from simulation state
+    LOB = simulationstate.LOB
 
     # take the time out of the message
     msg = split(message, "|")[2:end]
@@ -648,13 +692,18 @@ function UpdateLOBState!(LOB::LOBState, message)
                 if LOB.asks[id].volume == 0
                     delete!(LOB.asks, id)
                 end
-                
             else
 				LOB.priceReference = LOB.bₜ # price reference is the execution price of the previous trade (approx)
                 LOB.bids[id].volume -= volume
                 if LOB.bids[id].volume == 0
                     delete!(LOB.bids, id)
                 end
+            end
+            # update VWAP price for all trades (don't update if it is the RL trader)
+            if !(occursin("RL", string(trader)))
+                simulationstate.trade_vwap = (1 / (simulationstate.total_trade_volume + volume)) * (simulationstate.total_price_volume + volume * price)
+                simulationstate.total_trade_volume += volume
+                simulationstate.total_price_volume += price * volume # Σpᵢvᵢ
             end
         end
     end
@@ -717,7 +766,7 @@ function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel,
                 popfirst!(messages_received)
 
                 # update the LOBState with new order 
-                UpdateLOBState!(simulationstate.LOB, message)
+                UpdateLOBState!(simulationstate, message)
 
             end 
 
@@ -733,7 +782,7 @@ function InitializeLOB(simulationstate::SimulationState, messages_chnl::Channel,
                 popfirst!(messages_received)
 
                 # update the LOBState with new order 
-                UpdateLOBState!(simulationstate.LOB, message)
+                UpdateLOBState!(simulationstate, message)
 
                 # if there is only 1 message in the array then there is 1 message in the channel so break the initialization
                 # also clear the array so that we only keep the messages received from after the initialization
@@ -773,7 +822,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
 
     # Set the first subject messages
-    simulationstate = SimulationState(LOB, parameters, rlParameters, Vector{String}(), gateway, true, 1, Dates.now())
+    simulationstate = SimulationState(LOB, parameters, rlParameters, Vector{String}(), gateway, true, 1, Dates.now(), 0, 0, 0)
 
     # open the UDP socket
     receiver = UDPSocket()
@@ -801,6 +850,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         end
         try
             @assert !((rlParameters.type == "Sell") && !(isnothing(rlParameters.buyP)))
+            @assert !((rlParameters.type == "Buy") && (isnothing(rlParameters.buyP)))
         catch e
             close(messages_chnl)
             # close the Socket (can generate and EOF error in the async task at the end of the sim)
@@ -808,12 +858,12 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
             # clear LOB and end trading session
             EndLOB(gateway)
             # print the error
-            println("[Warning] Can't have a selling agent with a buying price")
+            println("[Warning] Can't have a selling agent with a buying price or a buying agent without")
             @error "Something went wrong" exception=(e, catch_backtrace())
             # return nothing so sensitivity analysis and calibration can stopped
             return nothing, nothing
         end
-        rl_traders_vec = map(i -> RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.type, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, rlParameters.buyP, Vector{Int64}(), -1.0), 1:rlParameters.Nᵣₗ) 
+        rl_traders_vec = map(i -> RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.type, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, rlParameters.buyP, Vector{Int64}(), -1.0, 0, 0, 0), 1:rlParameters.Nᵣₗ) 
     end
 
     # initialize the Subject and subscribe actors to it
@@ -836,7 +886,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
-    println("\n#################################################################### Initialization Started\n")
+    # println("\n#################################################################### Initialization Started\n")
 
     # global initializing = true
     number_initial_messages = 1001
@@ -851,7 +901,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         UpdateRunningTotals(running_totals, parameters.Nᴸₜ, parameters.Nᴸᵥ, simulationstate.LOB.bₜ, simulationstate.LOB.aₜ, char_traders_vec, fun_traders_vec, simulationstate.LOB.ρₜ, simulationstate.LOB.sₜ, simulationstate.LOB.asks, simulationstate.LOB.bids)
     end
 
-    println("\n#################################################################### Initialization Done\n")
+    # println("\n#################################################################### Initialization Done\n")
 
     #----- Event Loop -----#
 
@@ -873,7 +923,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
                     message = take!(messages_chnl)
                     
                     # update the LOBState with new order 
-                    UpdateLOBState!(simulationstate.LOB, message)
+                    UpdateLOBState!(simulationstate, message)
 
                     # if the message was from an RL trader then add this to the RL messages Vector
                     if rlTraders
@@ -962,7 +1012,15 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     if rlTraders
         println()
         println("Number of Actions = ", length(rl_traders_vec[1].actions))
-        println("Rewards = ", rl_traders_vec[1].R)
+        println("Return = ", sum(rl_traders_vec[1].R))
+        println("Average reward = ", mean(rl_traders_vec[1].R))
+        println("Min Reward = ", sort(rl_traders_vec[1].R)[1])
+        println("Second min Reward = ", sort(rl_traders_vec[1].R)[2])
+        println("Max Reward = ", sort(rl_traders_vec[1].R)[end])
+        println("Remaining ineventory = ", rl_traders_vec[1].i)
+        # for key in keys(rl_traders_vec[1].Q)
+        #     println(key, " => ", rl_traders_vec[1].Q[key])
+        # end
         println()
     end
 
