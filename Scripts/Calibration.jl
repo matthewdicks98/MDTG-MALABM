@@ -30,7 +30,7 @@ Calibration:
         ParameterConfidenceIntervals([8, 6, 0.125, 3.389, 7.221, 0.041])
         MomentConfidenceIntervals(startTime, endTime)
 =#
-using JLD, CSV, Plots, ProgressMeter, LinearAlgebra, StatsPlots, StatsBase, Distributions
+using JLD, CSV, Plots, ProgressMeter, LinearAlgebra, StatsPlots, StatsBase, Distributions, LaTeXStrings
 import Statistics: cov
 import Random.rand
 import Logging
@@ -198,11 +198,11 @@ function PlotObjectiveConvergence(stacktrace)
         j += 1
     end
     # Objectives
-    objectives = plot(1:iters, f, seriestype = :line, linecolor = :blue, label = "Weighted SSE objective", xlabel = "Iteration", ylabel = "Weighted SSE objective", legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, xaxis = false, xticks = false, legend = :bottomleft, guidefontsize = 7, yscale = :log10, minorticks = true, left_margin = 5Plots.mm, right_margin = 15Plots.mm)
+    objectives = plot(1:iters, f, seriestype = :line, linecolor = :blue, label = "Weighted SSE objective", xlabel = "Iteration", ylabel = "Weighted SSE objective", legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, xaxis = false, xticks = false, legend = :bottomleft, guidefontsize = 7, yscale = :log10, minorticks = true, left_margin = 5Plots.mm, right_margin = 15Plots.mm, fontfamily = "Computer Modern")
     plot!(twinx(), 1:iters, g_norm, seriestype = :line, linecolor = :purple, label = "Convergence criterion", ylabel = "Convergence criterion", legend = :topright, legendfontsize = 5, fg_legend = :transparent, tickfontsize = 5, yscale = :log10, minorticks = true, guidefontsize = 7)
     savefig(objectives, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessBestVertexOG.pdf")
     # Simplex values
-    convergence = plot(1:iters, f_simplex, seriestype = :line, linecolor = [:blue :purple :green :orange :red :black :magenta], xlabel = "Iteration", ylabel = "Weighted SSE objective", legend = false, tickfontsize = 5, guidefontsize = 7, yscale = :log10, minorticks = true)
+    convergence = plot(1:iters, f_simplex, seriestype = :line, linecolor = [:blue :purple :green :orange :red :black :magenta], xlabel = "Iteration", ylabel = "Weighted SSE objective", legend = false, tickfontsize = 5, guidefontsize = 7, yscale = :log10, minorticks = true, fontfamily = "Computer Modern")
     savefig(convergence, "../Images/Calibration/ObjectiveConvergence/NMTAFitnessAllSimplexValuesOG.pdf")
 end
 # stacktrace = load("../Data/Calibration/OptimizationResult.jld")["result"]
@@ -215,14 +215,14 @@ function ParameterTracePlots(stacktrace)
     meanTrace = fill(0.0, iters, 6)
     upperTrace = fill(0.0, iters, 6)
     lowerTrace = fill(0.0, iters, 6)
-    parameters = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
+    parameters = [("Nt", raw"$N^{c}_{_{\mathrm{LT}}}$"), ("Nv", raw"$N^{f}_{_{\mathrm{LT}}}$"), ("Delta",raw"$\delta$"), ("Kappa", raw"$\kappa$"), ("Nu", raw"$\nu$"), ("SigmaV", raw"$\sigma_{f}$")]
     c = [:blue :purple :green :orange :red :black :magenta]
     for (i,param) in enumerate(parameters)
         t = fill(0.0, iters, 7)
         for (j,s) in enumerate(simplex_trace(stacktrace))
             t[j,:] = transpose(hcat(s...))[:,i]
         end
-        p = plot(1:iters, t, seriestype = :line, linestyle = :dash, linecolor = c[i], xlabel = "Iteration", ylabel = last(param), legend = false, tickfontsize = 5, guidefontsize = 7, minorticks = true)
+        p = plot(1:iters, t, seriestype = :line, linestyle = :dash, linecolor = c[i], xlabel = "Iteration", ylabel = last(param), legend = false, tickfontsize = 5, guidefontsize = 7, minorticks = true, fontfamily = "Computer Modern")
         plot!(1:iters, transpose(hcat(centroid_trace(stacktrace)...))[:,i], seriestype = :line, linestyle = :solid, linecolor = c[i], linewidth = 2, legend = false)
         savefig(p, "../Images/Calibration/ParameterConvergence/ParameterConvergence" * first(param) * ".pdf")
     end
