@@ -27,7 +27,7 @@ SensitivityAnalysis:
         ParameterMomentCorrelationMatrix("MicroPrice", false); ParameterMomentCorrelationMatrix("MidPrice", false)
 =#
 ENV["JULIA_COPY_STACKS"]=1
-using ProgressMeter, CSV, Plots, DataFrames, StatsPlots, Statistics, ColorSchemes, Dates, JLD, Combinatorics, Colors
+using ProgressMeter, CSV, Plots, DataFrames, StatsPlots, Statistics, ColorSchemes, Dates, JLD, Combinatorics, Colors, LaTeXStrings
 using LinearAlgebra: diag, inv, transpose
 
 # set working directory (the path to the Scripts/StylisedFacts.jl file)
@@ -184,7 +184,7 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
+    parameters = [("Nt", raw"$N^{c}_{_{\mathrm{LT}}}$"), ("Nv", raw"$N^{f}_{_{\mathrm{LT}}}$"), ("Delta",raw"$\delta$"), ("Kappa", raw"$\kappa$"), ("Nu", raw"$\nu$"), ("SigmaV", raw"$\sigma_{f}$")]
     moments = [("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator"), ("Objective", "Objective Function")]
     for (i, (paramcol, paramlabel)) in enumerate(parameters)
         col = colors[i]
@@ -195,15 +195,9 @@ function MomentViolinPlots(midmicro::String, winsorize::Bool)
                 params_sr, moments_sr = Winsorize(params_sr, moments_sr)
             end
             if paramcol == "Delta" || paramcol == "SigmaV"
-                p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm)
-                # xlabel!(paramlabel, fontsize = 22)
-                # ylabel!(momentlabel, fontsize = 22)
-                # boxplot!((round.(params_sr, digits = 4)), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false, group = params_sr)
+                p = violin(string.(round.(params_sr, digits = 4)), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm, fontfamily = "Computer Modern")
             else
-                p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm)
-                # xlabel!(paramlabel, fontsize = 22)
-                # ylabel!(momentlabel, fontsize = 22)
-                # boxplot!(round.(params_sr, digits = 4), moments_sr, fillalpha = 0, marker = (1, :black, stroke(:black)), linewidth = 0, linecolor = :black, legend = false)
+                p = violin(round.(params_sr, digits = 4), moments_sr, quantiles = [0.025, 0.975], trim = true, show_median = true, tick_direction = :out, fillcolor = col, legend = false, xrotation = 30, yrotation = 30, tickfontsize = 12, guidefontsize = 22, xlabel = paramlabel, ylabel = momentlabel, left_margin = 5Plots.mm, bottom_margin = 5Plots.mm, fontfamily = "Computer Modern")
             end
             savefig(p, "../Images/SensitivityAnalysis/Violin/NoKurtosis/" * midmicro * "Images/" * paramcol * momentcol * ".pdf")
         end
@@ -219,13 +213,13 @@ function MomentInteractionSurfaces(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
+    parameters = [("Nt", raw"$N^{c}_{_{\mathrm{LT}}}$"), ("Nv", raw"$N^{f}_{_{\mathrm{LT}}}$"), ("Delta",raw"$\delta$"), ("Kappa", raw"$\kappa$"), ("Nu", raw"$\nu$"), ("SigmaV", raw"$\sigma_{f}$")]
     pairwise_combinations = collect(combinations(parameters, 2))
     moments = [("Kurtosis", "Kurtosis"), ("KS", "Kolmogorov-Smirnov"), ("Hurst", "Hurst Exponent"), ("GPH", "GPH Statistic"), ("ADF", "ADF Statistic"), ("GARCH", "GARCH"), ("Hill", "Hill Estimator")]
     for params in pairwise_combinations
         for (momentcol, momentlabel) in moments
             sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, Symbol(momentcol) => mean)
-            surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, momentcol * "_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = momentlabel, colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
+            surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, momentcol * "_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = momentlabel, colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis", fontfamily = "Computer Modern") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
             savefig(surface, "../Images/SensitivityAnalysis/MomentInteractionSurfaces/" * midmicro * "Images/" * params[1][1] * params[2][1] * momentcol * ".pdf")
         end
     end
@@ -240,11 +234,11 @@ function ObjectiveInteractionSurfaces(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     colors = ["blue", "red", "green", "magenta", "orange", "purple"]
-    parameters = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ")]
+    parameters = [("Nt", raw"$N^{c}_{_{\mathrm{LT}}}$"), ("Nv", raw"$N^{f}_{_{\mathrm{LT}}}$"), ("Delta",raw"$\delta$"), ("Kappa", raw"$\kappa$"), ("Nu", raw"$\nu$"), ("SigmaV", raw"$\sigma_{f}$")]
     pairwise_combinations = collect(combinations(parameters, 2))
     for params in pairwise_combinations
         sr_grouped = groupby(sr, [params[1][1], params[2][1]]) |> gdf -> combine(gdf, :Objective => mean)
-        surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, "Objective_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = "Objective", colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
+        surface = plot(unique(sr_grouped[:, params[1][1]]), unique(sr_grouped[:, params[2][1]]), reshape(sr_grouped[:, "Objective_mean"], (4,4)), seriestype = :surface, xlabel = params[1][2], ylabel = params[2][2], zlabel = "Objective", colorbar = false, camera=(45,60), seriesalpha = 0.8, left_margin = 5Plots.mm, right_margin = 15Plots.mm, colorscale = "Viridis", fontfamily = "Computer Modern") # cgrad(ColorScheme((colorant"green", colorant"red", length=10))), color = cgrad([:green, :springgreen4, :firebrick2, :red]),
         savefig(surface, "../Images/SensitivityAnalysis/ObjectiveInteractionSurfaces/NoKurtosis/" * midmicro * "Images/" * params[1][1] * params[2][1] * "Objective.pdf")
     end
 end
@@ -258,11 +252,11 @@ function ParameterMomentCorrelationMatrix(midmicro::String, winsorize::Bool)
     sr = CSV.File(string("../Data/SensitivityAnalysis/SensitivityAnalysisResultsObj.csv")) |> DataFrame
     sr = sr[findall(x -> x == midmicro, sr.Type),:]
     # variables = [("Nt", "Nᴸₜ"), ("Nv", "Nᴸᵥ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᵥ"), ("Mean", "Mean"), ("Std", "Std"), ("Kurtosis", "Kurtosis"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
-    variables = [("Nt", "Nᶜ"), ("Nv", "Nᶠ"), ("Delta","δ"), ("Kappa", "κ"), ("Nu", "ν"), ("SigmaV", "σᶠ"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
+    variables = [("Nt", raw"$N^{c}_{_{\mathrm{LT}}}$"), ("Nv", raw"$N^{f}_{_{\mathrm{LT}}}$"), ("Delta",raw"$\delta$"), ("Kappa", raw"$\kappa$"), ("Nu", raw"$\nu$"), ("SigmaV", raw"$\sigma_{f}$"), ("Mean", "Mean"), ("Std", "Std"), ("KS", "KS"), ("Hurst", "Hurst"), ("GPH", "GPH"), ("ADF", "ADF"), ("GARCH", "GARCH"), ("Hill", "Hill"), ("Objective", "Objective")]
     sr = sr[:,first.(variables)]
     C = cor(Matrix(sr))
     (n,m) = size(C)
-    H = heatmap(last.(variables), last.(variables), C, c = cgrad(:seismic, [0, 0.28, 0.56, 1]), xticks = (0.5:1:length(variables), last.(variables)), yticks = (0.5:1:length(variables), last.(variables)), xrotation = 45, yrotation = 0,  yflip=true, tickfontsize = 5, tick_direction = :out, alpha = 0.8)
+    H = heatmap(last.(variables), last.(variables), C, c = cgrad(:seismic, [0, 0.28, 0.56, 1]), xticks = (0.5:1:length(variables), last.(variables)), yticks = (0.5:1:length(variables), last.(variables)), xrotation = 45, yrotation = 0,  yflip=true, tickfontsize = 5, tick_direction = :out, alpha = 0.8, fontfamily = "Computer Modern")
     annotate!(H, [(j - 0.5, i - 0.5, text(round(C[i,j],digits=3), 5,:black, :center)) for i in 1:n for j in 1:m])
     savefig(H, "../Images/SensitivityAnalysis/CorrelationMatrix/CorrelationMatrix" * midmicro * ".pdf")
 end 
