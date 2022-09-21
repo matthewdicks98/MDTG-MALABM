@@ -455,6 +455,7 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
 
     # store the prev q for checking
     prev_qs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A)), 1:rlParameters.Nᵣₗ)
+    prev_cs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A)), 1:rlParameters.Nᵣₗ)
 
     # set the epsilon and the steps counter
     ϵ₀ = rlParameters.ϵ
@@ -500,36 +501,48 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
 
             for j in 1:rlParameters.Nᵣₗ
     
-                println("Prev Q ", j)
-                for key in keys(prev_qs[j])
-                    println(key, " => ", prev_qs[j][key])
-                end
+                # some printing for testing
+                # println("Prev C ", j)
+                # for key in keys(prev_cs[j])
+                #     println(key, " => ", prev_cs[j][key])
+                # end
     
-                println("Result Q ", j)
-                for key in keys(rl_result["rlAgent_" * string(j)]["Q"])
-                    println(key, " => ", rl_result["rlAgent_" * string(j)]["Q"][key])
-                end
+                # println("Result C ", j)
+                # for key in keys(rl_result["rlAgent_" * string(j)]["C"])
+                #     println(key, " => ", rl_result["rlAgent_" * string(j)]["C"][key])
+                # end
 
+                # actual storage updating
                 if i > 1                
                     if prev_qs[j] != rlParameters.initialQs[j]
                         println("Q Error")
                         return
                     end
                 end
+                if i > 1                
+                    if prev_cs[j] != rlParameters.initialCs[j]
+                        println("C Error")
+                        return
+                    end
+                end
+
 
                 # used to test the passing of Q from one simulation to another
                 for key in keys(rl_result["rlAgent_" * string(j)]["Q"])
                     prev_qs[j][key] = copy(rl_result["rlAgent_" * string(j)]["Q"][key])
+                    prev_cs[j][key] = copy(rl_result["rlAgent_" * string(j)]["C"][key])
                 end
 
                 # for the next simulation use the learnt Q from the previous as the new Q (make a copy, copy is made in the simulation)
                 rlParameters.initialQs[j] = rl_result["rlAgent_" * string(j)]["Q"]
+                rlParameters.initialCs[j] = rl_result["rlAgent_" * string(j)]["C"]
 
             end
 
             # save the rl_result to the vector
             for j in 1:rlParameters.Nᵣₗ
                 rl_result["rlAgent_" * string(j)]["Q"] = Dict(rl_result["rlAgent_" * string(j)]["Q"])
+                rl_result["rlAgent_" * string(j)]["C"] = Dict(rl_result["rlAgent_" * string(j)]["C"])
             end
             push!(rl_results, i => rl_result)
 
@@ -542,7 +555,7 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
         Logout(gateway)
         StopCoinTossX()
         # write results to a file
-        # @time save(path_to_files * "/Data/RL/Training/ResultsTest.jld", "rl_results", rl_results)
+        @time save(path_to_files * "/Data/RL/Training/ResultsTest.jld", "rl_results", rl_results)
     end 
 
 end
@@ -558,16 +571,18 @@ m₀ = 10000          # fixed at 10000
 σᵥ = 0.041         # 0.0025, 0.01, 0.0175, 0.025
 λmin = 0.0005       # fixed at 0.0005
 λmax = 0.05         # fixed at 0.05
-γ = Millisecond(100) # fixed at 25000
-T = Millisecond(2500) # fixed at 25000 
+γ = Millisecond(1000) # fixed at 25000
+T = Millisecond(25000) # fixed at 25000 
 seed = 1 # 6, 8, 9
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # Rl parameters
-Nᵣₗ = 3                      # num rl agents
+Nᵇᵣₗ = 0                       # num rl buying agents
+Nˢᵣₗ = 1                       # num rl selling agents
+Nᵣₗ = Nᵇᵣₗ + Nˢᵣₗ             # num rl agents
 startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
-rlT = Millisecond(2400)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
 numT = 5                    # number of time states (rlT must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
 V = 43000                    # (266/2 * 450) volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
 I = 5                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
@@ -584,15 +599,16 @@ spread_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/SpreadS
 volume_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/VolumeStates1_S5.csv") |> DataFrame
 # spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,true,1)
 actions = GenerateActions(A, maxVolunmeIncrease)
-actionType = "Sell"
+actionTypes = append!(["Buy" for i in 1:Nᵇᵣₗ], ["Sell" for i in 1:Nˢᵣₗ])
 ϵ₀ = 1            # used in epsilon greedy algorithm
 discount_factor = 1 # used in Q update (discounts future rewards)
 α = 0.5             # used in Q update (α = 0.1, 0.01, 0.5)
 initialQs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ)
+initialCs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ) # might need to remove if memory becomes an issue
 numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
 Ntwap = V / numDecisions
 
-rlParameters = RLParameters(Nᵣₗ, initialQs, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionType, ϵ₀, discount_factor, α, λᵣ, γᵣ)
+rlParameters = RLParameters(Nᵣₗ, initialQs, initialCs, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionTypes, ϵ₀, discount_factor, α, λᵣ, γᵣ)
 
 # rl training parameters
 numEpisodes = 2 # 1000

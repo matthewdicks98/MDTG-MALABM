@@ -81,6 +81,7 @@ end
 mutable struct RLParameters
     Nᵣₗ::Int64             # Number of RL agents
     initialQs::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the initial Q matrices from past iterations for all agents (change when there are multiple agents)
+    initialCs::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the intial state-action counts matrices
     startTime::Millisecond # defines the time to start trading for the first execution (the rest of the executions can be defined from this and T)
     T::Millisecond         # total time to trade for a single execution of volume
     numT::Int64            # number of time states
@@ -93,7 +94,7 @@ mutable struct RLParameters
     actions::Dict{Int64, Float64} # stores the mapping from action index to actual action
     spread_states_df::DataFrame # Stores the spread states for the RL agent
     volume_states_df::DataFrame # Stores the volume states for the RL agent
-    type::String           # indicates type of MO the agent will perform if it is a single agent 
+    actionTypes::Vector{String} # indicates type of MO the agents will perform
     ϵ::Float64             # used in epsilon greedy algorithm
     discount_factor::Float64 # used in Q update (discounts future rewards)
     α::Float64             # used in Q update
@@ -172,6 +173,7 @@ mutable struct RL <: Actor{SimulationState}
     done::Bool             # indicates if the trader has traded all the volume
     R::Vector{Float64}   # rewards stored over the course of a single execution
     Q::DefaultDict       # is the Q matrix for the RL agent for a single execution (only add a state-action pair when it is seen for the first time, don't initialize full Q)
+    C::DefaultDict       # Stores the state-action counts
     prev_state::Vector{Int64}     # stores the previous state for updating of Q
     prev_action::Int64          # stores the previous action for updating of Q
     trade_vwap::Float64           # stores the vwap for the agents stratergy
@@ -460,31 +462,27 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
         rlAgent.total_trade_volume > 0 ? reward = -(log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4 - penalty : reward = 0 - log(simulationstate.trade_vwap) # penalty same as above (change)
     end
 
-    println()
-    println(rlAgent.traderMnemonic)
-    println(trade_message)
-    println(sum_price_volume)
-    println(rlAgent.prev_action)
-    println(rlAgent.prev_state)
-    println(total_volume_traded)
-    println(past_time)
-    println(rlAgent.i)
-    println(simulationstate.trade_vwap)
-    println(rlAgent.trade_vwap)
-    println((log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4) # set - if it is a buy
-    println(penalty)
-    println(reward)
-    println()
+    # println()
+    # println(rlAgent.traderMnemonic)
+    # println(trade_message)
+    # println(sum_price_volume)
+    # println(rlAgent.prev_action)
+    # println(rlAgent.prev_state)
+    # println(total_volume_traded)
+    # println(past_time)
+    # println(rlAgent.i)
+    # println(simulationstate.trade_vwap)
+    # println(rlAgent.trade_vwap)
+    # println((log(rlAgent.trade_vwap) - log(simulationstate.trade_vwap)) * 1e4) # set - if it is a buy
+    # println(penalty)
+    # println(reward)
+    # println()
 
     # if the prev state said time is up but there is still remaining volume then penalize the agent for remaining volume, set terminal state and done
     if rlAgent.prev_action >= 0
         if rlAgent.prev_state[1] == 0 && !(rlAgent.done)
             rlAgent.done = true
             state = [0,0,0,0]
-            # add penalty for the buy RL agent for forgoing profit (Approach 4.1 => did not work)
-            # if rlAgent.actionType == "Buy"
-            #     reward = reward - (rlAgent.buyP * rlAgent.i)
-            # end
         end
     end
 
@@ -501,12 +499,12 @@ function RLAction(rlAgent::RL, simulationstate::SimulationState)
     # note argmax for selling and argmin for buying agents
     if rlAgent.prev_action >= 0
         rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] = rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] + simulationstate.rlParameters.α * (reward + simulationstate.rlParameters.discount_factor * maximum(rlAgent.Q[state]) - rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action])
+        rlAgent.C[rlAgent.prev_state][rlAgent.prev_action] += 1
     end
 
     # find the action that minimizes (maximizes) the cost (profit) based on the current state
     policy_probabilities = EpisilonGreedyPolicy(rlAgent.Q, state, simulationstate.rlParameters.ϵ, rlAgent)
     action = sample(Xoshiro(), 1:simulationstate.rlParameters.A, Weights(policy_probabilities), 1)[1] # supply a different rng than the global one so for the same price path different actions can be generated
-    # action = rand(collect(1:9))
     action_percentage_volume = simulationstate.rlParameters.actions[action]
 
     # add the store the rewards 
@@ -846,10 +844,12 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         # make a copy of the initial Q (change when there are multiple agents)
         for i in 1:rlParameters.Nᵣₗ
             Q = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))
+            C = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))
             for key in keys(rlParameters.initialQs[i])
                 Q[key] = copy(rlParameters.initialQs[i][key])
+                C[key] = copy(rlParameters.initialCs[i][key])
             end
-            rl_trader = RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.type, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, Vector{Int64}(), -1.0, 0, 0, 0) 
+            rl_trader = RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.actionTypes[i], rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, C, Vector{Int64}(), -1.0, 0, 0, 0) 
             push!(rl_traders_vec, rl_trader)
         end
     end
@@ -998,24 +998,28 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     end
 
     if rlTraders
-        println()
-        println("Number of Actions = ", length(rl_traders_vec[1].actions))
-        println("Return = ", sum(rl_traders_vec[1].R))
-        println("Average reward = ", mean(rl_traders_vec[1].R))
-        println("Min Reward = ", sort(rl_traders_vec[1].R)[1])
-        println("Second min Reward = ", sort(rl_traders_vec[1].R)[2])
-        println("Max Reward = ", sort(rl_traders_vec[1].R)[end])
-        println("Remaining ineventory = ", rl_traders_vec[1].i)
-        # for key in keys(rl_traders_vec[1].Q)
-        #     println(key, " => ", rl_traders_vec[1].Q[key])
-        # end
-        println()
+        for i in 1:length(rl_traders_vec)
+            println()
+            println("RL Agent " * string(i) * ":")
+            println("Type: " * rl_traders_vec[i].actionType)
+            println("Number of Actions = ", length(rl_traders_vec[i].actions))
+            println("Return = ", sum(rl_traders_vec[i].R))
+            println("Average reward = ", mean(rl_traders_vec[i].R))
+            println("Min Reward = ", sort(rl_traders_vec[i].R)[i])
+            println("Second min Reward = ", sort(rl_traders_vec[i].R)[2])
+            println("Max Reward = ", sort(rl_traders_vec[i].R)[end])
+            println("Remaining ineventory = ", rl_traders_vec[i].i)
+            # for key in keys(rl_traders_vec[1].Q)
+            #     println(key, " => ", rl_traders_vec[1].Q[key])
+            # end
+            println()
+        end
     end
 
     # return mid-prices and micro-prices, and if rl traded then return the Q matrices and rewards for the simulations
     if rlTraders # extend for multiple rl agents
         rl_result = Dict()
-        map(i -> push!(rl_result, "rlAgent_" * string(i) => Dict("Q" => rl_traders_vec[i].Q, "Rewards" => rl_traders_vec[i].R, "TotalReward" => sum(rl_traders_vec[i].R), "Actions" => rl_traders_vec[i].actions, "NumberActions" => length(rl_traders_vec[i].actions), "NumberTrades" => length(rl_traders_vec[i].trade_messages))), 1:rlParameters.Nᵣₗ)
+        map(i -> push!(rl_result, "rlAgent_" * string(i) => Dict("Q" => rl_traders_vec[i].Q, "C" => rl_traders_vec[i].C, "Rewards" => rl_traders_vec[i].R, "TotalReward" => sum(rl_traders_vec[i].R), "Actions" => rl_traders_vec[i].actions, "NumberActions" => length(rl_traders_vec[i].actions), "NumberTrades" => length(rl_traders_vec[i].trade_messages), "ActionType" => rl_traders_vec[i].actionType)), 1:rlParameters.Nᵣₗ)
         return mid_prices, micro_prices, rl_result
     else
         return mid_prices, micro_prices
