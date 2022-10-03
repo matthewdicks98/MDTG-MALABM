@@ -177,7 +177,7 @@ function WriteMessages(initial_messages_received::Vector{String}, messages_recei
     # choos the correct file path (if rl training then write messages to the rl training files)
     messages_path = ""
     if rl_training
-        messages_path = "/Data/CoinTossX/RawRLIteration" * string(iteration) * ".csv"
+        messages_path = "/Data/CoinTossX/RL/RawRLIteration" * string(iteration) * ".csv"
     else
         messages_path = "/Data/CoinTossX/Raw.csv"
     end

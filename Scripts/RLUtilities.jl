@@ -480,10 +480,12 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
 
             # determine if you need to write the messages (always write first and last) CHANGE TO MAKE SURE IT WRITES AFTER TESTING
             if i % iterationsPerWrite == 0 || i == numEpisodes || i == 1
-                @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, false, false, seed = seed, iteration = i)
+                @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, true, false, seed = seed, iteration = i)
             else
                 @time mid_prices, micro_price, rl_result = simulate(parameters, rlParameters, gateway, rlTraders, rl_training, false, false, false, seed = seed, iteration = i)
             end           
+
+            @assert((!isnothing(mid_prices)) && (!isnothing(micro_price)) && (!isnothing(rl_result)))
 
             # update ϵ
             rlParameters.ϵ = max(rlParameters.ϵ - (ϵ₀ - (1 - stepSizes[steps_counter]) * ϵ₀)/steps[steps_counter], 0)
@@ -578,8 +580,8 @@ seed = 1 # 6, 8, 9
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # Rl parameters
-Nᵇᵣₗ = 0                       # num rl buying agents
-Nˢᵣₗ = 1                       # num rl selling agents
+Nᵇᵣₗ = 1                       # num rl buying agents
+Nˢᵣₗ = 0                       # num rl selling agents
 Nᵣₗ = Nᵇᵣₗ + Nˢᵣₗ             # num rl agents
 startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
 rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
@@ -602,7 +604,7 @@ actions = GenerateActions(A, maxVolunmeIncrease)
 actionTypes = append!(["Buy" for i in 1:Nᵇᵣₗ], ["Sell" for i in 1:Nˢᵣₗ])
 ϵ₀ = 1            # used in epsilon greedy algorithm
 discount_factor = 1 # used in Q update (discounts future rewards)
-α = 0.5             # used in Q update (α = 0.1, 0.01, 0.5)
+α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
 initialQs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ)
 initialCs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ) # might need to remove if memory becomes an issue
 numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
@@ -611,10 +613,10 @@ Ntwap = V / numDecisions
 rlParameters = RLParameters(Nᵣₗ, initialQs, initialCs, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionTypes, ϵ₀, discount_factor, α, λᵣ, γᵣ)
 
 # rl training parameters
-numEpisodes = 2 # 1000
-steps = [40, 80, 30, 50]    # number of steps for each percentage decrease [200, 400, 150, 250] [40, 80, 30, 50]
+numEpisodes = 1000 # 1000
+steps = [200, 400, 150, 250]  # number of steps for each percentage decrease [200, 400, 150, 250] [40, 80, 30, 50]
 stepSizes = [0.1, 0.8, 0.09, 0]   # Percentage decrease over the number of steps
-iterationsPerWrite = 100
+iterationsPerWrite = 10
 
 # set the parameters that dictate output
 print_and_plot = false                    # Print out useful info about sim and plot simulation time series info
