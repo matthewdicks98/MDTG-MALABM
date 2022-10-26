@@ -153,10 +153,10 @@ end
 # spread_states_df, volume_states_df = HistoricalDistributionsStates(5,5,false,false,true,1)
 #---------------------------------------------------------------------------------------------------
 
-#----- Return actions -----# 
-function GenerateActions(A::Int64, maxVolunmeIncrease::Float64)
-    println("-------------------------------- Generating Actions --------------------------------")
-    actions = Dict{Int64, Float64}()
+#----- Return actions for type 1 agents -----# 
+function GenerateActionsRL1(A::Int64, maxVolunmeIncrease::Float64)
+    println("-------------------------------- Generating Type 1 RL Actions  --------------------------------")
+    actions = OrderedDict{Int64, Float64}()
     for (i, p) in enumerate(range(0, maxVolunmeIncrease, A))
         actions[i] = p
     end
@@ -164,56 +164,114 @@ function GenerateActions(A::Int64, maxVolunmeIncrease::Float64)
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Given the last RL messages return the volume traded and the profit/cost of the trade -----# 
-function ProcessMessages(messages::Vector{String}, rlAgent::RL)
+#----- Return actions for type 2 agents -----# 
+function GenerateActionsRL2(deltas, MA2)
+    println("-------------------------------- Generating Type 2 RL Actions --------------------------------")
+    actions = OrderedDict{Int64, Tuple{Float64, Float64}}()
+    i = 1
+    for delta in deltas
+        for (p, d) in zip(range(0, 2, MA2), ones(MA2) .* delta)
+            actions[i] = (p, d)
+            i += 1
+        end
+    end
+    return actions
+end
+#---------------------------------------------------------------------------------------------------
 
+#----- Given the last RL messages return the volume traded and the profit/cost of the trade, for market messages -----# 
+function ProcessMarketOrders(rlAgent::Union{RL1,RL2})
+
+    # store values used to compute rewards and Q updates (executed_vol, executed_price_vol, state, action)
+    results = Vector()
     total_volume_traded = 0
     sum_price_volume = 0
-    trade_message = ""
+    
+    # get the current MO ids 
+    current_order_ids = collect(keys(rlAgent.currentMOs))
 
-    for message in messages
+    for current_order_id in current_order_ids
 
+        # get the message
+        message = rlAgent.currentMOs[current_order_id]["trade_message"]
+        if message == ""
+            push!(results, (current_order_id, 0, 0, rlAgent.currentMOs[current_order_id]["state"], rlAgent.currentMOs[current_order_id]["action"]))
+            delete!(rlAgent.currentMOs, current_order_id)
+            continue
+        end
         # take the time out of the message
         msg = split(message, "|")[2:end]
-
-        #msg = split(message, "|")
         fields = split(msg[1], ",")
 
-        # need 2 types (Type is the original one and type is the one that changes (crossing LOs))
-        trader = fields[3]
-
-        # check if it is an order for the current RL trader
-        if trader == rlAgent.traderMnemonic
-
-            # get the executions
-            executions = msg[2:end]
-            if executions == [""]
-                return 0, 0, ""      
-            end
-
-            for execution in executions
-                executionFields = split(execution, ",")
-                id = parse(Int, executionFields[1]); price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
-                total_volume_traded += volume
-                sum_price_volume += price * volume
-            end
-
-            trade_message = message
-
-            break # only 1 order (message) per event loop per trader
-
+        executions = msg[2:end]
+        if executions == [""]
+            push!(results, (current_order_id, 0, 0, rlAgent.currentMOs[current_order_id]["state"], rlAgent.currentMOs[current_order_id]["action"]))      
+            delete!(rlAgent.currentMOs, current_order_id)
+            continue
         end
 
-    end
+        total_volume_traded = 0
+        sum_price_volume = 0
+        for execution in executions
+            executionFields = split(execution, ",")
+            id = parse(Int, executionFields[1]); price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
+            total_volume_traded += volume
+            sum_price_volume += price * volume
+        end
 
-    # println("Trade message: ", trade_message)
-    # println("Total volume traded: ", total_volume_traded)
-    # println("Sum price volume: ", sum_price_volume)
-    if total_volume_traded == 0 && sum_price_volume == 0
-        return 0, 0, ""
-    else
-        return total_volume_traded, sum_price_volume, trade_message
+        push!(results, (current_order_id, total_volume_traded, sum_price_volume, rlAgent.currentMOs[current_order_id]["state"], rlAgent.currentMOs[current_order_id]["action"]))
+        delete!(rlAgent.currentMOs, current_order_id)
+
     end
+    # println()
+    # println("Market orders")
+    # println(length(current_order_ids))
+    # for result in results
+    #     println(result)
+    # end 
+    # println()
+    return results
+end
+#---------------------------------------------------------------------------------------------------
+
+#----- Given the last RL and a type 2 agent return ... -----# 
+function ProcessLimitOrders(simulationstate::SimulationState, rlAgent::RL2)
+
+    # store values used to compute rewards and Q updates (executed_vol, executed_price_vol, state, action)
+    results = Vector()
+
+    # compare current LOs to orders in LOB to see which ones are there and which ones aren't
+    current_order_ids = collect(keys(rlAgent.currentLOs))
+
+    for current_order_id in current_order_ids
+        # compare volumes
+        if (rlAgent.currentLOs[current_order_id]["status"] == "cancelled") || (rlAgent.currentLOs[current_order_id]["order"].volume == rlAgent.currentLOs[current_order_id]["matched_volume"]) # the order was fully matched
+
+            # compute the results
+            executed_volume = rlAgent.currentLOs[current_order_id]["matched_volume"]
+            executed_price_volume =  executed_volume * rlAgent.currentLOs[current_order_id]["order"].price
+            push!(results, (current_order_id, executed_volume, executed_price_volume, rlAgent.currentLOs[current_order_id]["state"], rlAgent.currentLOs[current_order_id]["action"]))
+            # delete the orders from the currentOrders array
+            delete!(rlAgent.currentLOs, current_order_id)
+
+        elseif (rlAgent.currentLOs[current_order_id]["matched_volume"] > 0) && (rlAgent.currentLOs[current_order_id]["order"].volume > rlAgent.currentLOs[current_order_id]["matched_volume"]) # partial match
+                
+            # cancel partial matched order
+            if !(current_order_id in rlAgent.cancelledOrders)
+                CancelOrder(simulationstate.gateway, rlAgent.currentLOs[current_order_id]["order"])
+                push!(rlAgent.cancelledOrders, current_order_id)
+            end
+
+        end
+    end
+    # println()
+    # println("Limit orders")
+    # println(length(current_order_ids))
+    # for result in results
+    #     println(result)
+    # end 
+    # println()
+    return results
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -241,7 +299,7 @@ function GetSpreadState(LOB::LOBState, rlParameters::RLParameters)
     # println("Spread state: ", sₙ)
     return sₙ
 end
-function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::RL)
+function GetVolumeState(LOB::LOBState, rlParameters::RLParameters, rlAgent::Union{RL1,RL2})
     lower = 0
     v = 0 # volume of best bid or ask depending on the agents action type
     # if there is no volume on the other side then set Vₙ to state 1
@@ -329,7 +387,7 @@ function GetInventoryState(i::Int64, rlParameters::RLParameters)
     # println("Inventory state: ", iₙ)
     return iₙ
 end
-function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters, rlAgent::RL) # t and i are the remaining time and inventory
+function GetState(LOB::LOBState, t::Int64, i::Int64, rlParameters::RLParameters, rlAgent::Union{RL1,RL2}) # t and i are the remaining time and inventory
     
     # find the spread state
     sₙ = GetSpreadState(LOB, rlParameters)
@@ -354,7 +412,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Epsilon Greedy Policy -----# 
-function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Float64, rlAgent::RL)
+function EpisilonGreedyPolicy(Q::DefaultDict, state::Vector{Int64}, epsilon::Float64)
     # create and epsilon greedy policy for a given state
     num_actions_state = length(Q[state])
     policy = fill(epsilon / num_actions_state, num_actions_state) # each state has an equal prob of being chosen
@@ -453,9 +511,10 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
     # set storage for single agent rl_results (change when multiple)
     rl_results = Dict{Int64,Dict}()
 
-    # store the prev q for checking
-    prev_qs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A)), 1:rlParameters.Nᵣₗ)
-    prev_cs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A)), 1:rlParameters.Nᵣₗ)
+    # store the prev q for checking, type 1 and type 2 agents
+    prev_qs_rl1 = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A1)), 1:rlParameters.Nᵣₗ₁)
+    prev_qs_rl2 = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A2)), 1:rlParameters.Nᵣₗ₂)
+
 
     # set the epsilon and the steps counter
     ϵ₀ = rlParameters.ϵ
@@ -501,51 +560,56 @@ function TrainRL(parameters::Parameters, rlParameters::RLParameters, numEpisodes
             end
             println()
 
-            for j in 1:rlParameters.Nᵣₗ
-    
-                # some printing for testing
-                # println("Prev C ", j)
-                # for key in keys(prev_cs[j])
-                #     println(key, " => ", prev_cs[j][key])
-                # end
-    
-                # println("Result C ", j)
-                # for key in keys(rl_result["rlAgent_" * string(j)]["C"])
-                #     println(key, " => ", rl_result["rlAgent_" * string(j)]["C"][key])
-                # end
+            for j in 1:rlParameters.Nᵣₗ₁
 
                 # actual storage updating
                 if i > 1                
-                    if prev_qs[j] != rlParameters.initialQs[j]
+                    if prev_qs_rl1[j] != rlParameters.initialQsRL1[j]
                         println("Q Error")
+                        println("Type1")
+                        println(j)
                         return
                     end
                 end
-                if i > 1                
-                    if prev_cs[j] != rlParameters.initialCs[j]
-                        println("C Error")
-                        return
-                    end
-                end
-
 
                 # used to test the passing of Q from one simulation to another
                 for key in keys(rl_result["rlAgent_" * string(j)]["Q"])
-                    prev_qs[j][key] = copy(rl_result["rlAgent_" * string(j)]["Q"][key])
-                    prev_cs[j][key] = copy(rl_result["rlAgent_" * string(j)]["C"][key])
+                    prev_qs_rl1[j][key] = copy(rl_result["rlAgent_" * string(j)]["Q"][key])
                 end
 
                 # for the next simulation use the learnt Q from the previous as the new Q (make a copy, copy is made in the simulation)
-                rlParameters.initialQs[j] = rl_result["rlAgent_" * string(j)]["Q"]
-                rlParameters.initialCs[j] = rl_result["rlAgent_" * string(j)]["C"]
+                rlParameters.initialQsRL1[j] = rl_result["rlAgent_" * string(j)]["Q"]
 
+                # convert to Dict for storage
+                rl_result["rlAgent_" * string(j)]["Q"] = Dict(rl_result["rlAgent_" * string(j)]["Q"])
+
+            end
+
+            for j in 1:rlParameters.Nᵣₗ₂
+
+                # actual storage updating
+                if i > 1                
+                    if prev_qs_rl2[j] != rlParameters.initialQsRL2[j]
+                        println("Q Error")
+                        println("Type2")
+                        println(j)
+                        return
+                    end
+                end
+
+                # used to test the passing of Q from one simulation to another
+                for key in keys(rl_result["rlAgent_" * string(j + rlParameters.Nᵣₗ₁)]["Q"])
+                    prev_qs_rl2[j][key] = copy(rl_result["rlAgent_" * string(j + rlParameters.Nᵣₗ₁)]["Q"][key])
+                end
+
+                # for the next simulation use the learnt Q from the previous as the new Q (make a copy, copy is made in the simulation)
+                rlParameters.initialQsRL2[j] = rl_result["rlAgent_" * string(j + rlParameters.Nᵣₗ₁)]["Q"]
+
+                # convert to Dict for storage
+                rl_result["rlAgent_" * string(j + rlParameters.Nᵣₗ₁)]["Q"] = Dict(rl_result["rlAgent_" * string(j + rlParameters.Nᵣₗ₁)]["Q"])
             end
 
             # save the rl_result to the vector
-            for j in 1:rlParameters.Nᵣₗ
-                rl_result["rlAgent_" * string(j)]["Q"] = Dict(rl_result["rlAgent_" * string(j)]["Q"])
-                rl_result["rlAgent_" * string(j)]["C"] = Dict(rl_result["rlAgent_" * string(j)]["C"])
-            end
             push!(rl_results, i => rl_result)
 
             # garbage collect
@@ -574,49 +638,62 @@ m₀ = 10000          # fixed at 10000
 λmin = 0.0005       # fixed at 0.0005
 λmax = 0.05         # fixed at 0.05
 γ = Millisecond(1000) # fixed at 25000
-T = Millisecond(25000) # fixed at 25000 
+T = Millisecond(26600) # fixed at 25000  (27000 on server for t1 5 5)
 seed = 1 # 6, 8, 9
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # Rl parameters
-Nᵇᵣₗ = 1                       # num rl buying agents
-Nˢᵣₗ = 0                       # num rl selling agents
-Nᵣₗ = Nᵇᵣₗ + Nˢᵣₗ             # num rl agents
 startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
-rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+rlT = Millisecond(26100)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
 numT = 5                    # number of time states (rlT must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
-V = 43000                    # (266/2 * 450) volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
+V = 4300                    # (266/2 * 450) volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
 I = 5                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)
 B = 5                        # number of spread states
 W = 5                        # number of volume states
-A = 9                       # number of action states (if odd TWAP price will be an option else it will be either higher or lower)
 maxVolunmeIncrease = 2.0       # maximum increase in the number of TWAP shares (fix at 2 to make sure there are equal choices to increase and decrease TWAP volume)
 
 # reward function parameters
 λᵣ = 0.003                   # controls sensitivity to Slippage
 γᵣ = 0.25                    # controls sensitivity to time
 
+# RL  type 1 parameters
+Nᵇᵣₗ₁ = 5                       # num rl buying agents, type 1
+Nˢᵣₗ₁ = 5                       # num rl selling agents, type 1
+Nᵣₗ₁ = Nᵇᵣₗ₁ + Nˢᵣₗ₁             # num rl agents, type 1
+A1 = 9                       # number of action states for type 1 agent (if odd TWAP price will be an option else it will be either higher or lower)
+actionsRL1 = GenerateActionsRL1(A1, maxVolunmeIncrease)
+actionTypesRL1 = append!(["Buy" for i in 1:Nᵇᵣₗ₁], ["Sell" for i in 1:Nˢᵣₗ₁]) # action types for RL agent type 1
+initialQsRL1 = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A1)), 1:Nᵣₗ₁)
+
+# RL type 2 parameters (type 2 can submit market and limit orders)
+Nᵇᵣₗ₂ = 0                       # num rl buying agents, type 2
+Nˢᵣₗ₂ = 0                       # num rl selling agents, type 2
+Nᵣₗ₂ = Nᵇᵣₗ₂ + Nˢᵣₗ₂            # num rl agents, type 2
+deltas = [-1, 0, 3, 6]      # placement depth for limit orders, -1 is for market orders
+MA2 = 5
+actionsRL2 = GenerateActionsRL2(deltas, MA2)
+A2 = length(actionsRL2)                       # number of action states for type 2 agent
+actionTypesRL2 = append!(["Buy" for i in 1:Nᵇᵣₗ₂], ["Sell" for i in 1:Nˢᵣₗ₂]) # action types for RL agent type 2
+initialQsRL2 = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A2)), 1:Nᵣₗ₂)
+
+Nᵣₗ = Nᵣₗ₁ + Nᵣₗ₂
 spread_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/SpreadStates1_S5.csv") |> DataFrame
 volume_states_df = CSV.File(path_to_files * "/Data/RL/SpreadVolumeStates/VolumeStates1_S5.csv") |> DataFrame
 # spread_states_df, volume_states_df = HistoricalDistributionsStates(B,W,false,false,true,1)
-actions = GenerateActions(A, maxVolunmeIncrease)
-actionTypes = append!(["Buy" for i in 1:Nᵇᵣₗ], ["Sell" for i in 1:Nˢᵣₗ])
 ϵ₀ = 1            # used in epsilon greedy algorithm
 discount_factor = 1 # used in Q update (discounts future rewards)
 α = 0.1             # used in Q update (α = 0.1, 0.01, 0.5)
-initialQs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ)
-initialCs = map(i -> DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, A)), 1:Nᵣₗ) # might need to remove if memory becomes an issue
 numDecisions = 430 # 430 each agent has approx 430 decisions to make per simulation, Ntwap = V / numDecisions (this is fixed, but need to get estimated for new hardware)
-Ntwap = V / numDecisions
+Ntwap = V / numDecisions # volume to trade at each TWAP point
 
-rlParameters = RLParameters(Nᵣₗ, initialQs, initialCs, startTime, rlT, numT, V, Ntwap, I, B, W, A, actions, spread_states_df, volume_states_df, actionTypes, ϵ₀, discount_factor, α, λᵣ, γᵣ)
+rlParameters = RLParameters(Nᵣₗ, Nᵣₗ₁, Nᵣₗ₂, initialQsRL1, initialQsRL2, actionsRL1, actionsRL2, actionTypesRL1, actionTypesRL2, A1, A2, startTime, rlT, numT, V, Ntwap, I, B, W, spread_states_df, volume_states_df, ϵ₀, discount_factor, α, λᵣ, γᵣ)
 
 # rl training parameters
 numEpisodes = 1000 # 1000
 steps = [200, 400, 150, 250]  # number of steps for each percentage decrease [200, 400, 150, 250] [40, 80, 30, 50]
 stepSizes = [0.1, 0.8, 0.09, 0]   # Percentage decrease over the number of steps
-iterationsPerWrite = 10
+iterationsPerWrite = 10 # set at 10 
 
 # set the parameters that dictate output
 print_and_plot = false                    # Print out useful info about sim and plot simulation time series info

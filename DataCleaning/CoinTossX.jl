@@ -187,6 +187,9 @@ function CleanData(raw::String; initialization::Bool = false, times::Vector{Mill
     suffix = ""
     raw == "Raw" ? suffix = "" : suffix = raw[4:end]
     orders = CSV.File(string("../Data/CoinTossX/" * raw * ".csv"), drop = [!isempty(times) ? :DateTime : :Nothing], types = Dict(:Initialization => Symbol, :ClientOrderId => Int64, :DateTime => DateTime, :Price => Int64, :Volume => Int64, :Side => Symbol, :Type => Symbol, :TraderMnemonic => Symbol), dateformat = "yyyy-mm-ddTHH:MM:SS.s") |> DataFrame
+    if :OrderCountId in Symbol.(names(orders))
+        select!(orders, Not(:OrderCountId))
+    end
     replace!(orders.Type, :New => :Limit); # Rename Types # orders.Type[findall(x -> x == 0, orders.Price)] .= :Market 
     orders.ClientOrderId[findall(x -> x == :Cancelled, orders.Type)] .*= -1
     DataFrames.rename!(orders, [:ClientOrderId => :OrderId, :TraderMnemonic => :Trader])

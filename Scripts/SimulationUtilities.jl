@@ -177,7 +177,7 @@ function WriteMessages(initial_messages_received::Vector{String}, messages_recei
     # choos the correct file path (if rl training then write messages to the rl training files)
     messages_path = ""
     if rl_training
-        messages_path = "/Data/CoinTossX/RL/RawRLIteration" * string(iteration) * ".csv"
+        messages_path = "/Data/CoinTossX/MARL/RawRLIteration" * string(iteration) * ".csv"
     else
         messages_path = "/Data/CoinTossX/Raw.csv"
     end
@@ -186,7 +186,7 @@ function WriteMessages(initial_messages_received::Vector{String}, messages_recei
     open(path_to_files * messages_path, "w") do file
 
         # set the Header
-        println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,ClientOrderId,Price,Volume")
+        println(file, "Initialization,DateTime,Type,Side,TraderMnemonic,OrderCountId,ClientOrderId,Price,Volume")
 
         # add initial messages
         for message in initial_messages_received

@@ -42,12 +42,13 @@ include(path_to_files * "Scripts/CoinTossXUtilities.jl")
 function Listen(receiver, messages_chnl, messages_received)
     try 
         while true
+            s = Dates.now()
             message_loc = String(recv(receiver))
             # need to add when the message arrived
             message_loc_time = string(Dates.now()) * "|" * message_loc
             put!(messages_chnl, message_loc_time)
             push!(messages_received, message_loc_time)
-            # println("------------------- Port: " * message_loc_time) ########### Add back after testing
+            println("------------------- Port: " * message_loc_time) ########### Add back after testing
         end
     catch e
         if e isa EOFError
@@ -79,9 +80,17 @@ mutable struct Parameters
 	end
 end 
 mutable struct RLParameters
-    Nᵣₗ::Int64             # Number of RL agents
-    initialQs::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the initial Q matrices from past iterations for all agents (change when there are multiple agents)
-    initialCs::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the intial state-action counts matrices
+    Nᵣₗ::Int64              # total number of RL agents
+    Nᵣₗ₁::Int64             # Number of RL agents, type 1
+    Nᵣₗ₂::Int64             # Number of RL agents, type 2
+    initialQsRL1::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the initial Q matrices from past iterations for type 2 RL agents 
+    initialQsRL2::Vector{DefaultDict{Vector{Int64}, Vector{Float64}}} # the initial Q matrices from past iterations for type 2 RL agents 
+    actionsRL1::OrderedDict{Int64, Float64} # stores the mapping from action index to actual action, action type 1
+    actionsRL2::OrderedDict{Int64, Tuple{Float64, Float64}} # stores the mapping from action index to actual action, action type 2
+    actionTypesRL1::Vector{String} # indicates type of MO the agents will perform, rl agent type 1
+    actionTypesRL2::Vector{String} # indicates type of orders the agents will perform, rl agent type 2
+    A1::Int64               # number of action states for agent type 1
+    A2::Int64               # number of action states for agent type 2
     startTime::Millisecond # defines the time to start trading for the first execution (the rest of the executions can be defined from this and T)
     T::Millisecond         # total time to trade for a single execution of volume
     numT::Int64            # number of time states
@@ -90,11 +99,8 @@ mutable struct RLParameters
     I::Int64               # number of inventory states
     B::Int64               # number of spread states
     W::Int64               # number of volume states
-    A::Int64               # number of action states
-    actions::Dict{Int64, Float64} # stores the mapping from action index to actual action
     spread_states_df::DataFrame # Stores the spread states for the RL agent
     volume_states_df::DataFrame # Stores the volume states for the RL agent
-    actionTypes::Vector{String} # indicates type of MO the agents will perform
     ϵ::Float64             # used in epsilon greedy algorithm
     discount_factor::Float64 # used in Q update (discounts future rewards)
     α::Float64             # used in Q update
@@ -129,7 +135,6 @@ mutable struct SimulationState
     LOB::LOBState
     parameters::Parameters
     rlParameters::RLParameters
-    rlMessages::Vector{String} # stores the RL execution messages used for the reward and inventory counts
     gateway::TradingGateway
     initializing::Bool
     event_counter::Int64
@@ -141,467 +146,8 @@ mutable struct SimulationState
 end
 #---------------------------------------------------------------------------------------------------
 
-#----- Agent Structures -----# (all actors accept the string message as input)
-mutable struct Chartist <: Actor{SimulationState}
-    traderId::Int64 # uniquely identifies an agent
-    traderMnemonic::String # used to record who sent the orders
-    p̄ₜ::Float64 # Agent's mid-price EWMA
-    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
-    λ::Float64 # forgetting factor
-end
-mutable struct Fundamentalist <: Actor{SimulationState}
-    traderId::Int64 # uniquely identifies an agent
-    traderMnemonic::String # used to record who sent the orders
-    fₜ::Float64 # Current perceived value
-    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
-end
-mutable struct HighFrequency <: Actor{SimulationState}
-    traderId::Int64 # uniquely identifies an agent
-    traderMnemonic::String # used to record who sent the orders
-    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a trade
-    currentOrders::Array{Tuple{DateTime, Order}, 1} # the HF agents current orders in the order book (used for cancellations) (DateTime is the time the order was sent)
-end
-
-mutable struct RL <: Actor{SimulationState}
-    traderId::Int64 # uniquely identifies an agent
-    traderMnemonic::String # used to record who sent the orders
-    actionTimes::Array{Millisecond,1} # Arrival process of when each agent makes a decision
-    trade_messages::Vector{String}    # store all the messages when the agent made a trade
-    actions::Vector{Int64}            # store all the actions the agent took
-    actionType::String     # defines if the agent will be buying or selling
-    t::Int64               # time remaining
-    i::Int64               # inventory remaining/getting             
-    done::Bool             # indicates if the trader has traded all the volume
-    R::Vector{Float64}   # rewards stored over the course of a single execution
-    Q::DefaultDict       # is the Q matrix for the RL agent for a single execution (only add a state-action pair when it is seen for the first time, don't initialize full Q)
-    C::DefaultDict       # Stores the state-action counts
-    prev_state::Vector{Int64}     # stores the previous state for updating of Q
-    prev_action::Int64          # stores the previous action for updating of Q
-    trade_vwap::Float64           # stores the vwap for the agents stratergy
-    total_trade_volume::Int64   # stores total volume traded
-    total_price_volume::Int64   # stores Σpᵢvᵢ
-end
-#---------------------------------------------------------------------------------------------------
-
+include(path_to_files * "Scripts/Actors.jl")
 include(path_to_files * "Scripts/SimulationUtilities.jl") # have to include here otherwise it throws type errors (should refactor this)
-
-#----- Agent rules -----# 
-function HighFrequencyAgentAction(highfrquency::HighFrequency, simulationstate::SimulationState)
-
-    # do not trade if trading time is finished
-    if !(simulationstate.initializing)
-        if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
-            return
-        end
-    end
-
-    # cancel orders that have not been matched (dont have to account for the order being in the book or not since an empty message is sent back from CTX)
-    if !(simulationstate.initializing) && length(highfrquency.currentOrders) > 0 # dont cancell orders during initialization and make sure there are orders to cancel
-        # check if oldest order needs to be cancelled
-        if Dates.now() - highfrquency.currentOrders[1][1] > simulationstate.parameters.γ
-
-            # find all orders that need to be cancelled
-            timed_out_inds = findall(x -> Dates.now() - x[1] > simulationstate.parameters.γ, highfrquency.currentOrders)
-
-            # get all the orders that are in the LOB
-            cancel_inds = Vector{Int64}()
-            for ind in timed_out_inds
-                if (highfrquency.currentOrders[ind][2].orderId in keys(simulationstate.LOB.bids)) || (highfrquency.currentOrders[ind][2].orderId in keys(simulationstate.LOB.asks))
-                    push!(cancel_inds, ind)
-                end
-            end
-
-            # send cancellation orders through
-            for ind in cancel_inds
-                CancelOrder(simulationstate.gateway, highfrquency.currentOrders[ind][2])
-            end
-            
-            # delete the orders from the currentOrders array
-            deleteat!(highfrquency.currentOrders, cancel_inds)
-
-        end
-    end
-
-    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("HF", highfrquency.traderId), type = "Limit")
-
-    θ = simulationstate.LOB.ρₜ/2 + .5 # Probability of placing an ask
-    order.side = rand() < θ ? "Sell" : "Buy"
-    if order.side == "Sell"
-        α = 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) # Shape for power law
-
-        # if spread is 0 set η = 0
-        if simulationstate.LOB.sₜ == 0
-            η = 0
-        else
-            η = floor(rand(Gamma(simulationstate.LOB.sₜ, exp(simulationstate.LOB.ρₜ / simulationstate.parameters.κ))))
-        end
-
-        order.price = maximum([0, simulationstate.LOB.bₜ + 1 + η]) # ensure that there are no offers with negative prices
-        order.volume = round(Int, PowerLaw(5, α))
-        order.displayVolume = order.volume
-    else
-        α = 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
-
-        # if spread is 0 set η = 0
-        if simulationstate.LOB.sₜ == 0
-            η = 0
-        else
-            η = floor(rand(Gamma(simulationstate.LOB.sₜ, exp(-simulationstate.LOB.ρₜ / simulationstate.parameters.κ))))
-        end
-
-        order.price = maximum([0, simulationstate.LOB.aₜ - 1 -  η]) # ensure that there are no bids with negative prices
-        order.volume = round(Int, PowerLaw(5, α))
-        order.displayVolume = order.volume
-    end
-
-    # only record event times if they are after the initializing of the LOB
-    if !(simulationstate.initializing)
-        SubmitOrder(simulationstate.gateway, order)
-        current_time = Dates.now()
-        push!(highfrquency.actionTimes, current_time - simulationstate.start_time)
-        push!(highfrquency.currentOrders, (current_time, order))
-        simulationstate.event_counter += 1
-    else
-        # if initializing do not allow agents to submit an order in the spread
-        if (order.price > simulationstate.LOB.aₜ) || (order.price < simulationstate.LOB.bₜ)
-            SubmitOrder(simulationstate.gateway, order)
-            simulationstate.event_counter += 1
-        end
-    end
-    
-end
-function ChartistAction(chartist::Chartist, simulationstate::SimulationState)
-
-    # if the order book is being initialized do nothing
-    if simulationstate.initializing 
-        return
-    end
-
-    if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
-        return
-    end
-
-    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("TF", chartist.traderId), type = "Market")
-
-    # Update the agent's EWMA
-    chartist.p̄ₜ += chartist.λ * (simulationstate.LOB.mₜ - chartist.p̄ₜ) # took away the lambda
-
-    ######## Set agent's actions
-
-    # boolean saying whether there are orders on the contra side (assume there isn't)
-    contra = false
-
-    # boolean saying if the order will cause a volatility auction (assume it won't)
-    volatility = false
-
-    if chartist.p̄ₜ > simulationstate.LOB.mₜ + (1/2) * simulationstate.LOB.sₜ  
-        order.side = "Sell"
-    elseif chartist.p̄ₜ < simulationstate.LOB.mₜ - (1/2) * simulationstate.LOB.sₜ 
-        order.side = "Buy"
-    else # if there this agent is not trading then return
-        return
-    end
-
-    # set the order parameters
-    xₘ = 20
-    if abs(simulationstate.LOB.mₜ - chartist.p̄ₜ) > (simulationstate.parameters.δ * simulationstate.LOB.mₜ)
-        xₘ = 50
-    end
-    α = order.side == "Sell" ? 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) : 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
-	if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids)) # Agent won't submit MO if no orders on contra side
-		order.volume = round(Int, PowerLaw(xₘ, α))
-        contra = true
-	end
-    if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
-        if (abs(simulationstate.LOB.priceReference - simulationstate.LOB.bₜ) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    else
-        if (abs(simulationstate.LOB.aₜ - simulationstate.LOB.priceReference) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    end
-    
-    # Update τ and order times before the trade
-
-    # submit order if there are orders on the other side and if the order won't cause a volatility auction
-    if (contra) && !(volatility)
-        SubmitOrder(simulationstate.gateway, order)
-        push!(chartist.actionTimes, Dates.now() - simulationstate.start_time)
-        simulationstate.event_counter += 1
-    else # if there are no contra orders or a volatility auction might happen return
-        return
-    end
-end
-
-function FundamentalistAction(fundamentalist::Fundamentalist, simulationstate::SimulationState)
-
-    # if the order book is being initialized do nothing
-    if simulationstate.initializing 
-        return
-    end
-    
-    if !(Dates.now() - simulationstate.start_time < simulationstate.parameters.T)
-        return
-    end
-
-    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("VI", fundamentalist.traderId), type = "Market")
-
-    ######## Set agent's actions
-
-    # boolean saying whether there are orders on the contra side (assume there isn't)
-    contra = false
-
-    # boolean saying if the order will cause a volatility auction (assume it won't)
-    volatility = false
-
-    if fundamentalist.fₜ < simulationstate.LOB.mₜ - (1/2) * simulationstate.LOB.sₜ  
-        order.side = "Sell"
-    elseif fundamentalist.fₜ > simulationstate.LOB.mₜ + (1/2) * simulationstate.LOB.sₜ 
-        order.side = "Buy"
-    else # if this agent is not trading then return
-        return
-    end
-
-    # set the parameters of the order
-    xₘ = 20
-    if abs(simulationstate.LOB.mₜ - fundamentalist.fₜ) > (simulationstate.parameters.δ * simulationstate.LOB.mₜ)
-        xₘ = 50
-    end
-    # order.side = fundamentalist.fₜ < LOB.mₜ ? "Sell" : "Buy" # NEED TO CHANGE
-    α = order.side == "Sell" ? 1 - (simulationstate.LOB.ρₜ/simulationstate.parameters.ν) : 1 + (simulationstate.LOB.ρₜ/simulationstate.parameters.ν)
-	if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids))
-        order.volume = round(Int, PowerLaw(xₘ, α))
-        contra = true
-	end
-    if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
-        if (abs(simulationstate.LOB.priceReference - simulationstate.LOB.bₜ) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    else
-        if (abs(simulationstate.LOB.aₜ - simulationstate.LOB.priceReference) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    end
-
-    # submit order if there are orders on the other side and if the order won't cause a volatility auction
-    if (contra) && !(volatility)
-        SubmitOrder(simulationstate.gateway, order)
-        push!(fundamentalist.actionTimes, Dates.now() - simulationstate.start_time)
-        simulationstate.event_counter += 1
-    else
-        return
-    end
-    
-end
-
-# Define the trading for the RL agent and the updating of the Q-matrix
-function RLAction(rlAgent::RL, simulationstate::SimulationState)
-
-    # if the order book is being initialized do nothing
-    if simulationstate.initializing 
-        return
-    end
-    current_time = Dates.now()
-    if !(current_time - simulationstate.start_time < simulationstate.parameters.T) 
-        return
-    end
-    if rlAgent.done
-        return
-    end
-
-    # process the RL messages to get traded volume (for the prev state and prev action combination) (for inventory counter) and reward = Σpᵢvᵢ 
-    total_volume_traded, sum_price_volume, trade_message = ProcessMessages(simulationstate.rlMessages, rlAgent)
-
-    if trade_message != ""
-        push!(rlAgent.trade_messages, trade_message)
-    end
-
-    # get the remaining volume (need the RL messages)
-    rlAgent.i = rlAgent.i - total_volume_traded
-
-    # get remaining time (will need to change if we use more than 1 execution per day), also need to add that entire reamining volume must be traded
-    rl_start_time = (simulationstate.start_time + simulationstate.rlParameters.startTime)
-    rl_end_time = (rl_start_time + simulationstate.rlParameters.T)
-    remaining_time = (rl_end_time - current_time).value
-    past_time = ((current_time - rl_start_time).value) / 1000 # convert to seconds for better reward function
-
-    # get the new state
-    state, done = GetState(simulationstate.LOB, remaining_time, rlAgent.i, simulationstate.rlParameters, rlAgent)
-
-    # tells the rl agent whether there is inventory to trade or not
-    rlAgent.done = done
-
-    # println("# -------------------------------------------------- #")
-    # println("State: ", state)
-    # println("Done: ", rlAgent.done)
-
-    # set the reward (change for buy)
-    # reward = sum_price_volume
-    # if rlAgent.actionType == "Sell"
-    #     reward = -sum_price_volume
-    # end
-
-    # update VWAP price for current rl agent trades (only update if there has been a trade with more than 0 volume executed)
-    if total_volume_traded > 0
-        rlAgent.trade_vwap = (1 / (rlAgent.total_trade_volume + total_volume_traded)) * (rlAgent.total_price_volume + sum_price_volume)
-        rlAgent.total_trade_volume += total_volume_traded
-        rlAgent.total_price_volume += sum_price_volume # Σpᵢvᵢ
-    end
-
-    # compute the market VWAP (do not include trades of the current agent)
-    market_vwap_volume = simulationstate.total_trade_volume
-    market_vwap_price_volume = simulationstate.total_price_volume
-    if length(simulationstate.rl_traders_vec) > 1 # there are more than 1 RL trader add their contribution to the VWAP market price
-        market_vwap_volume += sum(rl_trader.total_trade_volume for rl_trader in simulationstate.rl_traders_vec if rl_trader.traderId != rlAgent.traderId)
-        market_vwap_price_volume += sum(rl_trader.total_price_volume for rl_trader in simulationstate.rl_traders_vec if rl_trader.traderId != rlAgent.traderId)
-    end
-
-    # check if market vwap is not 0 if it is then set it to initial mid-price
-    if market_vwap_volume > 0
-        market_vwap = market_vwap_price_volume / market_vwap_volume
-    else
-        market_vwap = simulationstate.parameters.m₀
-    end
-
-    # rlAgent.actionType == "Sell" ? reward = sum_price_volume : reward = -sum_price_volume - rlAgent.buyP * rlAgent.i # (Approach 4.2) -sum_price_volume + rlAgent.buyP * total_volume_traded # (Approach 5) -sum_price_volume - rlAgent.buyP (stand in for C) * rlAgent.i
-    reward = 0
-    total_volume_traded == 0 ? a = 1 : a = total_volume_traded
-    rlAgent.i == 0 ? penalty = 0 : penalty = (simulationstate.rlParameters.λᵣ * exp(simulationstate.rlParameters.γᵣ * past_time) * (rlAgent.i/a))
-    if rlAgent.actionType == "Sell"  # only recompute the reward if vwaps are not 0
-        rlAgent.total_trade_volume > 0 ? reward = (log(rlAgent.trade_vwap) - log(market_vwap)) * 1e4 - penalty : reward = 0 - log(market_vwap) # only compute the reward if there has been volume traded
-    elseif rlAgent.actionType == "Buy"
-        rlAgent.total_trade_volume > 0 ? reward = -(log(rlAgent.trade_vwap) - log(market_vwap)) * 1e4 - penalty : reward = 0 - log(market_vwap) # penalty same as above (change)
-    end
-
-    # println()
-    # println(rlAgent.traderMnemonic)
-    # println(trade_message)
-    # println(sum_price_volume)
-    # println(rlAgent.prev_action)
-    # println(rlAgent.prev_state)
-    # println(total_volume_traded)
-    # println(past_time)
-    # println(rlAgent.i)
-    # println(simulationstate.total_trade_volume)
-    # println(simulationstate.total_price_volume)
-    # println(rlAgent.total_trade_volume)
-    # println(rlAgent.total_price_volume)
-    # println(market_vwap_volume)
-    # println(market_vwap_price_volume)
-    # println()
-    # println("Action type: ", rlAgent.actionType)
-    # println("Market vwap: ", market_vwap)
-    # println("Agent vwap: ", rlAgent.trade_vwap)
-    # println("Penalty: ", penalty)
-    # if rlAgent.actionType == "Sell"
-    #     println("Slippage: ", (log(rlAgent.trade_vwap) - log(market_vwap)) * 1e4)
-    # elseif rlAgent.actionType == "Buy"
-    #     println("Slippage: ", -(log(rlAgent.trade_vwap) - log(market_vwap)) * 1e4)
-    # end
-    # println("Reward: ", reward)
-    # println()
-    # println()
-
-    # if the prev state said time is up but there is still remaining volume then penalize the agent for remaining volume, set terminal state and done
-    if rlAgent.prev_action >= 0
-        if rlAgent.prev_state[1] == 0 && !(rlAgent.done)
-            rlAgent.done = true
-            state = [0,0,0,0]
-        end
-    end
-
-    # add the store the rewards 
-    if rlAgent.prev_action >= 0 
-        push!(rlAgent.R, reward) 
-    end
-
-    # println("Reward: ", reward)
-    # println("State: ", state)
-    # println("Done: ", rlAgent.done)
-
-    # update Q only if an action has been taken in the sim (so after the first iteration of the event loop)
-    # note argmax for selling and argmin for buying agents
-    if rlAgent.prev_action >= 0
-        rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] = rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action] + simulationstate.rlParameters.α * (reward + simulationstate.rlParameters.discount_factor * maximum(rlAgent.Q[state]) - rlAgent.Q[rlAgent.prev_state][rlAgent.prev_action])
-        rlAgent.C[rlAgent.prev_state][rlAgent.prev_action] += 1
-    end
-
-    # find the action that minimizes (maximizes) the cost (profit) based on the current state
-    policy_probabilities = EpisilonGreedyPolicy(rlAgent.Q, state, simulationstate.rlParameters.ϵ, rlAgent)
-    action = sample(Xoshiro(), 1:simulationstate.rlParameters.A, Weights(policy_probabilities), 1)[1] # supply a different rng than the global one so for the same price path different actions can be generated
-    action_percentage_volume = simulationstate.rlParameters.actions[action]
-
-    # add the store the actions 
-    if rlAgent.prev_action >= 0 
-        push!(rlAgent.actions, action) 
-    end
-
-    # check remaining time and if non left  and not in terminal state trade as much as possible
-    if remaining_time <= 0
-        if !(rlAgent.done)
-            action = simulationstate.rlParameters.A
-            action_percentage_volume = 2 
-        elseif (rlAgent.done) # if time is up and we are in terminal then dont trade
-            action = 1
-            action_percentage_volume = 0
-        end
-    end
-
-    # perform the action
-    order = Order(orderId = simulationstate.event_counter, traderMnemonic = string("RL", rlAgent.traderId), type = "Market")
-    order.side = rlAgent.actionType
-
-    # boolean saying whether there are orders on the contra side (assume there isn't)
-    contra = false
-
-    # boolean saying if the order will cause a volatility auction (assume it won't)
-    volatility = false
-
-    # set volume and add contra and volatility check (don't let RL agent trade if no order on the other side or if it will cause a volatility auction)
-    # action_percentage_volume 
-    if (order.side == "Buy" && !isempty(simulationstate.LOB.asks)) || (order.side == "Sell" && !isempty(simulationstate.LOB.bids))
-        order.volume = minimum([ceil(action_percentage_volume * simulationstate.rlParameters.Ntwap), rlAgent.i]) # adjust twap volume action_percentage_volume, trade remaining volume if action is too high
-        contra = true
-	end
-    if order.side == "Sell" # Agent won't send MO if it will cause a volatility auction
-        if (abs(simulationstate.LOB.priceReference - simulationstate.LOB.bₜ) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    else
-        if (abs(simulationstate.LOB.aₜ - simulationstate.LOB.priceReference) / simulationstate.LOB.priceReference) > 0.1
-            order.volume = 0
-            volatility = true
-        end
-    end
-    # println()
-    # println("Action: ", action)
-    # println("Action percentage volume: ", action_percentage_volume)
-    # println("Order volume: ", order.volume)
-    # println("Remaining inventory: ", rlAgent.i)
-    # println()
-
-    # submit order if there are orders on the other side and if the order won't cause a volatility auction and order.volume must be greater than 0
-    if (contra) && !(volatility) && (order.volume > 0)
-        SubmitOrder(simulationstate.gateway, order)
-        push!(rlAgent.actionTimes, Dates.now() - simulationstate.start_time)
-        simulationstate.event_counter += 1        
-    end
-
-    # update next state and action to reflect the state and action combination taken in this iteration 
-    rlAgent.prev_state = state
-    rlAgent.prev_action = action
-
-    return
-
-end
-
-#---------------------------------------------------------------------------------------------------
 
 #----- Define How Subject Passes Messages to Actors -----#
 function nextState(subject::Subject, simulationstate::SimulationState)
@@ -634,10 +180,15 @@ Rocket.on_next!(actor::Fundamentalist, simulationstate::SimulationState) = Funda
 Rocket.on_error!(actor::Fundamentalist, err)      = error(err)
 Rocket.on_complete!(actor::Fundamentalist)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
-# RL
-Rocket.on_next!(actor::RL, simulationstate::SimulationState) = RLAction(actor, simulationstate)
-Rocket.on_error!(actor::RL, err)      = error(err)
-Rocket.on_complete!(actor::RL)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
+# RL, type 1
+Rocket.on_next!(actor::RL1, simulationstate::SimulationState) = RLAction1(actor, simulationstate)
+Rocket.on_error!(actor::RL1, err)      = error(err)
+Rocket.on_complete!(actor::RL1)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
+
+# RL, type 2
+Rocket.on_next!(actor::RL2, simulationstate::SimulationState) = RLAction2(actor, simulationstate)
+Rocket.on_error!(actor::RL2, err)      = error(err)
+Rocket.on_complete!(actor::RL2)        = println("ID: " * actor.traderId * " Name: " * actor.traderMnemonic * " Completed!")
 
 #---------------------------------------------------------------------------------------------------
 
@@ -679,7 +230,7 @@ function UpdateLOBState!(simulationstate::SimulationState, message)
         # If the order is the first one in the executions list then the new LO is the same but the volume is the volume of that LO
         # less the rest of the volume in that order.
         # If it is the last in the executions then it is the same LO but the volume is the one in the executions
-        if type == :Trade && fields[3][1:2] == "HF" && side == :Buy 
+        if type == :Trade && side == :Buy # && fields[3][1:2] == "HF"
             # checks asks for a buy since this will be where the LO buys is executed against
             if !(id in keys(LOB.asks)) 
                 # this is the excess order that needs to be a new limit order
@@ -687,11 +238,17 @@ function UpdateLOBState!(simulationstate::SimulationState, message)
                 
                 # if it is the first then I need to remove some volume
                 if i == 1
+                    if length(executions[2:end]) == 0
+                        println()
+                        println("Message that cause the error: ")
+                        println(message)
+                        println()
+                    end
                     volume = volume - sum(parse(Int, split(e, ",")[3]) for e in executions[2:end])
                 end
 
             end
-        elseif type == :Trade && fields[3][1:2] == "HF" && side == :Sell 
+        elseif type == :Trade && side == :Sell # && fields[3][1:2] == "HF" 
             # checks bids for a sell since this will be where the LO buys is executed against
             if !(id in keys(LOB.bids))
                 # this is the excess order that needs to be a new limit order
@@ -699,6 +256,12 @@ function UpdateLOBState!(simulationstate::SimulationState, message)
 
                 # if it is the first then I need to remove some volume
                 if i == 1
+                    if length(executions[2:end]) == 0
+                        println()
+                        println("Message that cause the error: ")
+                        println(message)
+                        println()
+                    end
                     volume = volume - sum(parse(Int, split(e, ",")[3]) for e in executions[2:end])
                 end
 
@@ -725,12 +288,6 @@ function UpdateLOBState!(simulationstate::SimulationState, message)
                 if LOB.bids[id].volume == 0
                     delete!(LOB.bids, id)
                 end
-            end
-            # update VWAP price for all trades (don't update if it is a RL trader)   
-            if !(occursin("RL", string(trader)))
-                simulationstate.trade_vwap = (1 / (simulationstate.total_trade_volume + volume)) * (simulationstate.total_price_volume + volume * price)
-                simulationstate.total_trade_volume += volume
-                simulationstate.total_price_volume += price * volume # Σpᵢvᵢ
             end
         end
     end
@@ -762,6 +319,92 @@ end
 #----- Supplementary functions -----#
 function PowerLaw(xₘ, α) # Volumes
     return xₘ / (rand() ^ (1 / α))
+end
+function ComputeAbmAgentsMarketVwap(simulationstate::SimulationState, message::String) # computes the markey VWAP for ABM agents (not including any RL agents)
+    msg = split(message, "|")[2:end]
+	fields = split(msg[1], ",")
+    type = Symbol(fields[1]); trader = fields[3]
+
+    if type == :New || occursin("RL", trader) # only compute trades and don't add RL traders trades to the VWAP volume
+        return
+    elseif type == :Trade
+        executions = msg[2:end]
+        if executions == [""]
+            return
+        end
+        for (i, execution) in enumerate(executions)
+            executionFields = split(execution, ",")
+            price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
+            simulationstate.trade_vwap = (1 / (simulationstate.total_trade_volume + volume)) * (simulationstate.total_price_volume + volume * price)
+            simulationstate.total_trade_volume += volume
+            simulationstate.total_price_volume += price * volume # Σpᵢvᵢ
+        end
+    end
+
+end
+function UpdateLimitOrderStates(rlAgents::Vector{Union{RL1,RL2}}, message::String)
+    msg = split(message, "|")[2:end]
+    fields = split(msg[1], ",")
+    trader = fields[3]
+    type = fields[1]
+    executions = msg[2:end]
+    orderId = parse(Int, fields[4])
+
+    if type == "New" || executions == [""]
+        return
+    end
+
+    for (i, execution) in enumerate(executions)
+        executionFields = split(execution, ",")
+        id = parse(Int, executionFields[1]); price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
+        for rlAgent in rlAgents
+            if (id in collect(keys(rlAgent.currentLOs))) && (orderId != id) && (id > 0) # find if match with RL agents orders, not limit order, not cancellation
+                rlAgent.currentLOs[id]["matched_volume"] += volume
+                break
+            end
+            if (-id in collect(keys(rlAgent.currentLOs))) && (id < 0) # cancellations
+                rlAgent.currentLOs[-id]["status"] = "cancelled"
+                break
+            end
+        end
+    end
+
+end
+
+function UpdateMarketOrderStates(rlAgents::Vector{Union{RL1,RL2}}, message::String)
+    # println()
+    # take the time out of the message
+    msg = split(message, "|")[2:end]
+    fields = split(msg[1], ",")
+    trader = fields[3]
+    orderId = parse(Int, fields[4])
+    traderId = parse(Int, trader[3:end])
+    executions = msg[2:end]
+    if executions == [""] # should never occur since market order but just in case
+       return
+    end
+
+    if rlAgents[traderId].agentType == "Type2"
+        if orderId in collect(keys(rlAgents[traderId].currentLOs)) # if the market orders id is in the traders LOs not market orders
+            # treat as if the LO has been matched
+            for execution in executions
+                executionFields = split(execution, ",")
+                id = parse(Int, executionFields[1]); price = parse(Int, executionFields[2]); volume = parse(Int, executionFields[3])
+                if orderId != id
+                    rlAgents[traderId].currentLOs[orderId]["matched_volume"] += volume
+                end
+            end
+            # println(rlAgents[traderId].currentLOs[orderId])
+        else # pure market order message
+            rlAgents[traderId].currentMOs[orderId]["trade_message"] = message
+            # println(rlAgents[traderId].currentMOs[orderId])
+        end
+    elseif rlAgents[traderId].agentType == "Type1"
+        rlAgents[traderId].currentMOs[orderId]["trade_message"] = message
+    end
+
+    # println(message)
+    # println()
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -849,7 +492,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     LOB = LOBState(40, 0, parameters.m₀, NaN, parameters.m₀, parameters.m₀ - 20, parameters.m₀ + 20, Dict{Int64, LimitOrder}(), Dict{Int64, LimitOrder}())
 
     # Set the first subject messages
-    simulationstate = SimulationState(LOB, parameters, rlParameters, Vector{String}(), gateway, true, 1, Dates.now(), Vector{RL}(), 0, 0, 0)
+    simulationstate = SimulationState(LOB, parameters, rlParameters, gateway, true, 1, Dates.now(), Vector{Union{RL1,RL2}}(), 0, 0, 0)
 
     # open the UDP socket
     receiver = UDPSocket()
@@ -869,15 +512,23 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
 
     # initialize RL Traders (change to deal with multiple RL agents having different types)
     if rlTraders
-        # make a copy of the initial Q (change when there are multiple agents)
-        for i in 1:rlParameters.Nᵣₗ
-            Q = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))
-            C = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A))
-            for key in keys(rlParameters.initialQs[i])
-                Q[key] = copy(rlParameters.initialQs[i][key])
-                C[key] = copy(rlParameters.initialCs[i][key])
+        # make a copy of the initial Q and add RL type 1 agents
+        for i in 1:rlParameters.Nᵣₗ₁
+            Q = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A1))
+            for key in keys(rlParameters.initialQsRL1[i])
+                Q[key] = copy(rlParameters.initialQsRL1[i][key])
             end
-            rl_trader = RL(i, "RL"*string(i), Array{Millisecond,1}(), Vector{String}(), Vector{Int64}(), rlParameters.actionTypes[i], rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, C, Vector{Int64}(), -1.0, 0, 0, 0) 
+            rl_trader = RL1(i, "RL"*string(i), "Type1", Array{Millisecond,1}(), Vector{Int64}(), rlParameters.actionTypesRL1[i], false, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, Vector{Int64}(), OrderedDict(), 0, 0, 0) 
+            push!(simulationstate.rl_traders_vec, rl_trader)
+        end
+        # make a copy of the initial Q and add RL type 2 agents
+        for i in 1:rlParameters.Nᵣₗ₂
+            Q = DefaultDict{Vector{Int64}, Vector{Float64}}(() -> zeros(Float64, rlParameters.A2))
+            for key in keys(rlParameters.initialQsRL2[i])
+                Q[key] = copy(rlParameters.initialQsRL2[i][key])
+            end
+            # will need to change as RL agent type 2 has different storage
+            rl_trader = RL2(Nᵣₗ₁ + i, "RL"*string(Nᵣₗ₁ + i), "Type2", Array{Millisecond,1}(), Vector{Int64}(), rlParameters.actionTypesRL2[i], false, rlParameters.T.value, rlParameters.V, false, Vector{Float64}(), Q, Vector{Int64}(), OrderedDict(), OrderedDict(), Set{Int64}(), 0, 0, 0) 
             push!(simulationstate.rl_traders_vec, rl_trader)
         end
     end
@@ -902,7 +553,8 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     end
 
     # initialize LOBState (generate a bunch of limit orders from the HF traders that will be used as the initial state before the trading starts)
-    # println("\n#################################################################### Initialization Started\n")
+    println()
+    println("\n#################################################################### Initialization Started\n")
 
     # global initializing = true
     number_initial_messages = 1001
@@ -917,7 +569,8 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         UpdateRunningTotals(running_totals, parameters.Nᴸₜ, parameters.Nᴸᵥ, simulationstate.LOB.bₜ, simulationstate.LOB.aₜ, char_traders_vec, fun_traders_vec, simulationstate.LOB.ρₜ, simulationstate.LOB.sₜ, simulationstate.LOB.asks, simulationstate.LOB.bids)
     end
 
-    # println("\n#################################################################### Initialization Done\n")
+    println("\n#################################################################### Initialization Done\n")
+    println()
 
     #----- Event Loop -----#
 
@@ -928,7 +581,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         @time while true
             
             # Sleep the main task for a tiny amount of time to switch to the listening task
-            sleep(0.05)
+            sleep(0.055) # tune to make 430
 
             # send the event to be processed by the actors
             if isready(messages_chnl) # if there are messages in the channel then take the last update
@@ -941,21 +594,26 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
                     # update the LOBState with new order 
                     UpdateLOBState!(simulationstate, message)
 
-                    # if the message was from an RL trader then add this to the RL messages Vector
+                    # if the message was from an RL trader then add this to the RL messages Vector, update the market VWAPs, and update LO states
                     if rlTraders
+
+                        # compute the market VWAP for the ABM agents but not the RL agents
+                        ComputeAbmAgentsMarketVwap(simulationstate, message)
 
                         # take the time out of the message
                         msg = split(message, "|")[2:end]
-
-                        #msg = split(message, "|")
                         fields = split(msg[1], ",")
-
-                        # need 2 types (Type is the original one and type is the one that changes (crossing LOs))
                         trader = fields[3]
+                        type = fields[1]
 
-                        # store the traders rl messages (change when add multiple) (think this might have been fixed in the RLUtilities process messages file)
-                        if occursin("RL", trader)
-                            push!(simulationstate.rlMessages, message)
+                        # update RL type 2 traders limit order states (assumes type 1 agents are always initialised before type 2)
+                        if Nᵣₗ₂ > 0
+                            UpdateLimitOrderStates(simulationstate.rl_traders_vec[(Nᵣₗ₁+1):end], message)
+                        end
+
+                        # store the traders rl market order messages 
+                        if occursin("RL", trader) && type == "Trade"
+                            UpdateMarketOrderStates(simulationstate.rl_traders_vec, message)
                         end
 
                     end
@@ -973,9 +631,6 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
 
                 # check if the actors want to act based on the updated state
                 Rocket.next!(source, simulationstate)
-
-                # clear the RL messages vector (only want to store current orders)
-                empty!(simulationstate.rlMessages)
 
             else
                 break
@@ -1033,11 +688,12 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
         for i in 1:length(simulationstate.rl_traders_vec)
             println()
             println("RL Agent " * string(i) * ":")
-            println("Type: " * simulationstate.rl_traders_vec[i].actionType)
+            println("Agent Type: ", simulationstate.rl_traders_vec[i].agentType)
+            println("Action Type: " * simulationstate.rl_traders_vec[i].actionType)
             println("Number of Actions = ", length(simulationstate.rl_traders_vec[i].actions))
             println("Return = ", sum(simulationstate.rl_traders_vec[i].R))
             println("Average reward = ", mean(simulationstate.rl_traders_vec[i].R))
-            println("Min Reward = ", sort(simulationstate.rl_traders_vec[i].R)[i])
+            println("Min Reward = ", sort(simulationstate.rl_traders_vec[i].R)[1])
             println("Second min Reward = ", sort(simulationstate.rl_traders_vec[i].R)[2])
             println("Max Reward = ", sort(simulationstate.rl_traders_vec[i].R)[end])
             println("Remaining ineventory = ", simulationstate.rl_traders_vec[i].i)
@@ -1048,7 +704,7 @@ function simulate(parameters::Parameters, rlParameters::RLParameters, gateway::T
     # return mid-prices and micro-prices, and if rl traded then return the Q matrices and rewards for the simulations
     if rlTraders # extend for multiple rl agents
         rl_result = Dict()
-        map(i -> push!(rl_result, "rlAgent_" * string(i) => Dict("Q" => simulationstate.rl_traders_vec[i].Q, "C" => simulationstate.rl_traders_vec[i].C, "Rewards" => simulationstate.rl_traders_vec[i].R, "TotalReward" => sum(simulationstate.rl_traders_vec[i].R), "Actions" => simulationstate.rl_traders_vec[i].actions, "NumberActions" => length(simulationstate.rl_traders_vec[i].actions), "NumberTrades" => length(simulationstate.rl_traders_vec[i].trade_messages), "ActionType" => simulationstate.rl_traders_vec[i].actionType, "RemainingInventory" => simulationstate.rl_traders_vec[i].i)), 1:rlParameters.Nᵣₗ)
+        map(i -> push!(rl_result, "rlAgent_" * string(i) => Dict("Q" => simulationstate.rl_traders_vec[i].Q, "Rewards" => simulationstate.rl_traders_vec[i].R, "TotalReward" => sum(simulationstate.rl_traders_vec[i].R), "Actions" => simulationstate.rl_traders_vec[i].actions, "NumberActions" => length(simulationstate.rl_traders_vec[i].actions), "NumberTrades" => length(simulationstate.rl_traders_vec[i].actionTimes), "ActionType" => simulationstate.rl_traders_vec[i].actionType, "AgentType" => simulationstate.rl_traders_vec[i].agentType, "RemainingInventory" => simulationstate.rl_traders_vec[i].i)), 1:length(simulationstate.rl_traders_vec))
         return mid_prices, micro_prices, rl_result
     else
         return mid_prices, micro_prices

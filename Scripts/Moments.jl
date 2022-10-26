@@ -53,6 +53,9 @@ struct Moments # Moments of log-returns
         hill = HillEstimator(GetUpperQuantile(logreturns1, 0.95), 50) # findall is a massive inefficiency
         new(μ, σ, κ, ks, hurst, gph, adf, garch, hill)
     end
+    function Moment(μ::Float64, σ::Float64, κ::Float64, ks::Float64, hurst::Float64, gph::Float64, adf::Float64, garch::Float64, hill::Float64)
+        new(μ, σ, κ, ks, hurst, gph, adf, garch, hill)
+    end
 end
 #---------------------------------------------------------------------------------------------------
 
