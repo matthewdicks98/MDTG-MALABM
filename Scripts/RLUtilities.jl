@@ -638,14 +638,14 @@ m₀ = 10000          # fixed at 10000
 λmin = 0.0005       # fixed at 0.0005
 λmax = 0.05         # fixed at 0.05
 γ = Millisecond(1000) # fixed at 25000
-T = Millisecond(26600) # fixed at 25000  (27000 on server for t1 5 5)
+T = Millisecond(25000) # fixed at 25000  (27000 on server for t1 5 5)
 seed = 1 # 6, 8, 9
 
 parameters = Parameters(Nᴸₜ = Nᴸₜ, Nᴸᵥ = Nᴸᵥ, Nᴴ = Nᴴ, δ = δ, κ = κ, ν = ν, m₀ = m₀, σᵥ = σᵥ, λmin = λmin, λmax = λmax, γ = γ, T = T)
 
 # Rl parameters
 startTime = Millisecond(0)   # start time for RL agents (keep it at the start of the sim until it is needed to have multiple)
-rlT = Millisecond(26100)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
+rlT = Millisecond(24500)     # 24500 execution duration for RL agents (needs to ensure that RL agents finish before other agents to allow for correct computation of final cost)
 numT = 5                    # number of time states (rlT must be divisible by numT to ensure evenly spaced intervals, error will be thrown) (not including zero state, for negative time)
 V = 4300                    # (266/2 * 450) volume to trade in each execution (ensure it is large enough so that price impact occurs at higher TWAP volumes and lower TWAP volumes no price impact)
 I = 5                       # number of invetory states (I must divide V to ensure evenly spaced intervals, error will be thrown) (not including terminal state)

@@ -268,7 +268,7 @@ end
 #---------------------------------------------------------------------------------------------------
 
 #----- Visualize the a single agents policy -----# 
-function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap::Dict)
+function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap)
 
     P = GetPolicy(Q)
     plots = []

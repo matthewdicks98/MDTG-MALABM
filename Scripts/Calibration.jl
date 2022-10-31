@@ -61,7 +61,7 @@ end
 function GenerateSimulatedReturnsAndMoments(empiricalMidPriceLogReturns::Vector{Float64}, empiricalMicroPriceLogReturns::Vector{Float64})
     println("Generating returns and moments for simulated data")
     simData = CSV.File(string("../Data/CoinTossX/L1LOB.csv"), missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
-    filter!(x -> !ismissing(x.MidPrice), empericalData); filter!(x -> !ismissing(x.MicroPrice), simData)
+    filter!(x -> !ismissing(x.MidPrice), simData); filter!(x -> !ismissing(x.MicroPrice), simData)
     midPriceLogReturns = diff(log.(simData.MidPrice))
     microPriceLogReturns = diff(log.(simData.MicroPrice))
     simulatedLogReturns = DataFrame(MidPriceLogReturns = midPriceLogReturns, MicroPriceLogReturns = microPriceLogReturns)

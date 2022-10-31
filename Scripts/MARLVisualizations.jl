@@ -171,8 +171,7 @@ function RewardConvergence(marl_data, tol, alpha)
         end
     end
     for key in keys(plots)
-#         savefig(plots[key], "../Images/MARL/Returns_" * key * ".pdf")
-        display(plots[key])
+#         Plots.savefig(plots[key], "../Images/MARL/Returns_" * key * ".pdf")
     end
 end
 
@@ -292,9 +291,9 @@ function CorrelationVsBoxSize(data, dims, es_starts, es_stops, es_step, tau, tol
         end
     end
         
-    if plot_slopes
-        display(p)
-    end
+    # if plot_slopes # only true in notebook
+    #     display(p)
+    # end
     
     return slopes, se_betas
     
@@ -365,7 +364,7 @@ function PlotEmbedding(embedding, case)
         legend = false, lw = 1, marker = "o", markersize = 0, alpha = 0.5, color = :dodgerblue3, 
         xlabel = raw"X1 [$\times 10^{5}$]", ylabel = raw"X2 [$\times10^{5}$]", grid = false,
         size = (500,500), fontfamily = "Computer Modern")
-  display(p)
+    # Plots.savefig(p, path_to_files * "/Images/MARL/Embedding_" * join(split(case, ","), "_") * ".pdf")
 end
 
 function PlotEmbedding(embedding, smoothedReturns, indices, case)
@@ -386,13 +385,10 @@ function PlotEmbedding(embedding, smoothedReturns, indices, case)
         title = case, grid = false, size = (500,500), 
         fontfamily = "Computer Modern")
     plot!(indices, smoothedReturns[indices] .* 10^5)
-    
-    display(p)
-    display(q)
 
     case = join(split(case, ","), "_")
-#     savefig(p, "../Images/MARL/EmbbedingExample_" * case * "_no_points_square.pdf")
-#     savefig(q, "../Images/MARL/Logreturns_" * case * "_square.pdf")
+#     Plots.savefig(p, "../Images/MARL/EmbbedingExample_" * case * "_no_points_square.pdf")
+#     Plots.savefig(q, "../Images/MARL/Logreturns_" * case * "_square.pdf")
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -633,8 +629,7 @@ function PlotAllCorrelationVsBoxSize(combinationsRes, combinationsAndSettings)
             end
         end
     end
-    # savefig(p, "../Images/MARL/EmbeddingVsFractal.pdf")
-    display(p)
+    # Plots.savefig(p, "../Images/MARL/EmbeddingVsFractal.pdf")
 end
 
 function AvgSlopesVsNumAgents(combinationsRes, combinationsAndSettings, window)
@@ -749,17 +744,17 @@ function RLTradeSignAutocorrelation(combinationsAndSettings::Vector, format::Str
         uniqueDays = unique(data.Date)
         tradeSigns = data[findall(x -> x == :Market, data.Type), :Side]
         lag = length(tradeSigns) - 1
-        autoCorr = autocor(tradeSigns, 1:lag; demean = false)
+        autoCorr = autocor(tradeSigns, 1:lag; demean = false) # bbox(0.58, 0.1, 0.42, 0.42)
         if i == 1
             autoCorrPlot = plot(autoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = (0.35,0.9), label = label, title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), grid = false, fontfamily="Computer Modern")
-            plot!(autoCorrPlot, autoCorr, xscale = :log10, inset = (1, bbox(0.58, 0.1, 0.4, 0.4)), legend = false, subplot = 2, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.5), grid = false, fontfamily="Computer Modern")
+            plot!(autoCorrPlot, autoCorr, xscale = :log10, inset = (1, bbox(0.53, 0.12, 0.47, 0.45)), legend = false, subplot = 2, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.5), grid = false, fontfamily="Computer Modern")
         else
             plot!(autoCorrPlot, autoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = (0.35,0.9), label = label, title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), grid = false, fontfamily="Computer Modern")
-            plot!(autoCorrPlot[2], autoCorr, xscale = :log10, legend = false, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.5  ))
+            plot!(autoCorrPlot[2], autoCorr, xscale = :log10, legend = false, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, formatter = :plain, ylim = (-0.1, 0.5  ))
         end
     end
     plot!(autoCorrPlot, [quantile(Normal(), (1 + 0.95) / 2) / sqrt(length(tradeSigns)), quantile(Normal(), (1 - 0.95) / 2) / sqrt(length(tradeSigns))], seriestype = :hline, line = (:dash, :black, 2), label = "")
-    savefig(autoCorrPlot, "../Images/MARL/RLTradeSignAutocorrelation." * format)
+    # Plots.savefig(autoCorrPlot, "../Images/MARL/RLTradeSignAutocorrelation." * format)
     println("RL agents trade-sign autocorrelation complete")
 end
 
@@ -830,12 +825,14 @@ function RLAbsLogReturnAutocorrelation(combinationsAndSettings::Vector, format::
         absAutoCorr = autocor(abs.(logreturns), 1:lag; demean = false)
         if i == 1
             autoCorrPlot = plot(absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = label, title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), formatter = :plain, grid = false, fontfamily="Computer Modern")
+            plot!(autoCorrPlot, absAutoCorr, xscale = :log10, inset = (1, bbox(0.5, 0.1, 0.5, 0.5)), legend = false, subplot = 2, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.6), grid = false, fontfamily="Computer Modern")
         else
             plot!(autoCorrPlot, absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = label, title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), formatter = :plain, grid = false, fontfamily="Computer Modern")
+            plot!(autoCorrPlot[2], absAutoCorr, xscale = :log10, legend = false, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale autocorrelation", titlefontsize = 7, formatter = :plain, ylim = (-0.1, 0.6))
         end
     end
     plot!(autoCorrPlot, [quantile(Normal(), (1 + 0.95) / 2) / sqrt(length(logreturns)), quantile(Normal(), (1 - 0.95) / 2) / sqrt(length(logreturns))], seriestype = :hline, line = (:dash, :black, 2), label = "")
-    savefig(autoCorrPlot, "../Images/MARL/RLAbsLogReturnAutocorrelation." * format)
+    # Plots.savefig(autoCorrPlot, "../Images/MARL/RLAbsLogReturnAutocorrelation." * format)
     println("RL agents absolute log return autocorrelation complete")
 end
 
@@ -941,8 +938,8 @@ function RLPriceImpact(combinationsAndSettings::Vector, format::String = "pdf")
             plot!(priceImpactSell, ω[2:(end-3), 2], Δp[2:(end-3), 2], scale = :log10, markershape = [:dtriangle], markercolor = [color], markerstrokecolor = [color], markersize = 3, linecolor = [color], xlabel = "ω*", ylabel = "Δp*", label = label, legend = :topleft, fg_legend = :transparent, title = "Seller initiated", grid = false, fontfamily="Computer Modern")
         end
     end
-    savefig(priceImpactBuy, string("../Images/MARL/RLPriceImpactBuyerInitiated.", format))
-    savefig(priceImpactSell, string("../Images/MARL/RLPriceImpactSellerInitiated.", format))
+    # Plots.savefig(priceImpactBuy, string("../Images/MARL/RLPriceImpactBuyerInitiated.", format))
+    # Plots.savefig(priceImpactSell, string("../Images/MARL/RLPriceImpactSellerInitiated.", format))
     println("RL agents price impact complete")
 end
 
@@ -1097,7 +1094,7 @@ end
 
 #----- Moment comparison plots -----# 
 
-function AbsoluteMomentBarPlot(results::Dict, abmMoments::Moments, jseMoments::Moments, combinations::Vector, combinationsAndLegend::Vector)
+function AbsoluteMomentBarPlot(results::Dict, abmMoments::Moments, jseMoments::Moments, combinations::Vector, combinationsAndLegend::Vector, W::Matrix{Float64}, SimulatedW::Matrix{Float64})
 
     # radar 1: absolute moments
     labels = [raw"$\mu$", raw"$\sigma$", "KS", "Hurst", "GPH", "ADF", "GARCH", "Hill"]
@@ -1118,15 +1115,19 @@ function AbsoluteMomentBarPlot(results::Dict, abmMoments::Moments, jseMoments::M
             moments = results[combination]["simulated_moments_final"]
             moment_mat[i,:] = [moments.μ moments.σ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
         end
+        println()
+        println(case)
+        println(moment_mat[i,:])
         if combination in first.(combinationsAndLegend)
             push!(indices, combination => i)
         end
     end
     
-    means = mean(moment_mat, dims = 1)
-    sdevs = std(moment_mat, dims = 1)
+    sigmas = sqrt.(diag(inv(W)))
+    sim_sigmas = sqrt.(diag(inv(SimulatedW)))
     
-    moments_norm = (moment_mat .- means) ./ sdevs 
+    abm_moment_mat = reshape(moment_mat[abm_index,:], (1, length(moment_mat[abm_index,:])))
+    percentage_mat = ((moment_mat ./ abm_moment_mat) .- 1) * 100
     
     p = nothing
     cases = Vector{String}()
@@ -1134,108 +1135,258 @@ function AbsoluteMomentBarPlot(results::Dict, abmMoments::Moments, jseMoments::M
     colors = Vector()
     for (i, (combination, legend, color)) in enumerate(combinationsAndLegend)
         
-        if legend == "ABM"
-            moments = abmMoments
-            append!(moments_vec, moments_norm[indices[combination],:])
-        elseif legend == "JSE"
-            moments = jseMoments
-            append!(moments_vec, moments_norm[indices[combination],:])
-        else
-            moments = results[combination]["simulated_moments_final"]
-            append!(moments_vec, moments_norm[indices[combination],:])
-        end
-        push!(cases, legend)
-        push!(colors, color)
-    end
-    # reshape(colors, (1,length(colors)))
-    p = groupedbar(repeat(labels, outer = length(cases)), moments_vec, 
-        group = repeat(cases, inner = length(labels)), legend = :topleft, fg_legend = :transparent, 
-        ylabel = "Absolute normalised moments", grid = false, color = reshape(colors, (1, length(colors))), 
-        linecolor = :match,
-        font="Computer Modern")
-
-    display(p)
-#     savefig(p, "../Images/MARL/AbsoluteMomentBarPlot.pdf")
-end
-
-function RelativeMomentBarPlot(results::Dict, abmMoments::Moments, jseMoments::Moments, combinations::Vector, combinationsAndLegend::Vector)
-
-    # radar 1: absolute moments
-    labels = [raw"$\mu$", raw"$\sigma$", "KS", "Hurst", "GPH", "ADF", "GARCH", "Hill"]
-        
-    # normalise
-    moment_mat = fill(0.0, (length(combinations), length(labels)))
-    abm_index = 0
-    indices = Dict()
-    for (i, (combination, case)) in enumerate(combinations)
-        if case == "ABM"
-            abm_index = i
-            moments = abmMoments
-            moment_mat[i,:] = [moments.μ moments.σ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
-        elseif case == "JSE"
-            moments = jseMoments
-            moment_mat[i,:] = [moments.μ moments.σ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
-        else
-            moments = results[combination]["simulated_moments_final"]
-            moment_mat[i,:] = [moments.μ moments.σ moments.ks moments.hurst moments.gph moments.adf moments.garch moments.hill]
-        end
-        if combination in first.(combinationsAndLegend)
-            push!(indices, combination => i)
-        end
-    end
-    
-    means = mean(moment_mat, dims = 1)
-    sdevs = std(moment_mat, dims = 1)
-    
-    moments_norm = (moment_mat .- means) ./ sdevs 
-    
-    p = nothing
-    cases = Vector{String}()
-    moments_vec = Vector{Float64}()
-    colors = Vector()
-    for (i, (combination, legend, color)) in enumerate(combinationsAndLegend)
-        
-        if legend != "JSE" && legend != "ABM" # only consider the cases 
-            moments = results[combination]["simulated_moments_final"]
-            append!(moments_vec, abs.(moments_norm[indices[combination],:] .- moments_norm[abm_index,:]))
+        if legend != "ABM"
+            append!(moments_vec, percentage_mat[indices[combination],:])
             push!(cases, legend)
             push!(colors, color)
         end
-
+        
+        if legend != "JSE"
+            println()
+            println("Case: ", legend)
+            println("Moments: ", moment_mat[indices[combination],:])
+            println("Moments lower: ", moment_mat[indices[combination],:] .- 1.96 * sim_sigmas)
+            println("Moments upper: ", moment_mat[indices[combination],:] .+ 1.96 * sim_sigmas)
+            println("Percentage moments: ", percentage_mat[indices[combination],:])
+        else
+            println()
+            println("Case: ", legend)
+            println("Moments: ", moment_mat[indices[combination],:])
+            println("Moments lower: ", moment_mat[indices[combination],:] .- 1.96 * sigmas)
+            println("Moments upper: ", moment_mat[indices[combination],:] .+ 1.96 * sigmas)
+            println("Percentage moments: ", percentage_mat[indices[combination],:])
+        end
     end
-
     # reshape(colors, (1,length(colors)))
     p = groupedbar(repeat(labels, outer = length(cases)), moments_vec, 
-        group = repeat(cases, inner = length(labels)), legend = :topleft, fg_legend = :transparent, 
-        ylabel = "Relative normalised moments", grid = false, color = reshape(colors, (1, length(colors))), 
+        group = repeat(cases, inner = length(labels)), legend = :topright, fg_legend = :transparent, 
+        ylabel = "% difference", grid = false, color = reshape(colors, (1, length(colors))), 
         linecolor = :match,
         font="Computer Modern")
 
-    display(p)
-#     savefig(p, "../Images/MARL/RelativeMomentBarPlot.pdf")
+#     Plots.savefig(p, "../Images/MARL/PercentageMomentBarPlot_ABM.pdf")
 end
 
-mycolorpalette = palette(:default)
-combinations_and_legends = [
-    ((["abm"], 0, 0, 0, 0), "ABM", mycolorpalette[1]),
-    (([2], 0, 0, 1, 0), "II+", mycolorpalette[2]),
-    (([1], 1, 1, 0, 0), "I+,I-", mycolorpalette[3]),
-    ((["jse"], 0, 0, 0, 0), "JSE", mycolorpalette[4])
-];
-combinations = [
-    (([1], 1, 0, 0, 0), "I+"),
-    (([1], 0, 1, 0, 0), "I-"),
-    (([1], 1, 1, 0, 0), "I+,I-"),
-    (([2], 0, 0, 1, 0), "II+"),
-    (([2], 0, 0, 1, 1), "II+,II-"),
-    (([1,2], 0, 1, 1, 0), "II+,I-"),
-    (([1], 0, 5, 0, 0), "5I-"),
-    (([2], 0, 0, 5, 0), "5II+"),
-    (([1], 5, 5, 0, 0), "5I+,5I-"),
-    (([2], 0, 0, 5, 5), "5II+,5II-"),
-    ((["abm"], 0, 0, 0, 0), "ABM"),
-    ((["jse"], 0, 0, 0, 0), "JSE")
-];
-# RelativeMomentBarPlot(results, jse_moments, abm_moments, combinations, combinations_and_legends)
-# AbsoluteMomentBarPlot(results, jse_moments, abm_moments, combinations, combinations_and_legends)
+# mycolorpalette = palette(:default)
+# combinations_and_legends = [
+#     ((["abm"], 0, 0, 0, 0), "ABM", mycolorpalette[1]),
+#     (([2], 0, 0, 1, 0), "II+", mycolorpalette[2]),
+#     (([1], 1, 1, 0, 0), "I+,I-", mycolorpalette[3]),
+#     ((["jse"], 0, 0, 0, 0), "JSE", mycolorpalette[4])
+# ];
+# combinations = [
+#     (([1], 1, 0, 0, 0), "I+"),
+#     (([1], 0, 1, 0, 0), "I-"),
+#     (([1], 1, 1, 0, 0), "I+,I-"),
+#     (([2], 0, 0, 1, 0), "II+"),
+#     (([2], 0, 0, 1, 1), "II+,II-"),
+#     (([1,2], 0, 1, 1, 0), "II+,I-"),
+#     (([1], 0, 5, 0, 0), "5I-"),
+#     (([2], 0, 0, 5, 0), "5II+"),
+#     (([1], 5, 5, 0, 0), "5I+,5I-"),
+#     (([2], 0, 0, 5, 5), "5II+,5II-"),
+#     ((["abm"], 0, 0, 0, 0), "ABM"),
+#     ((["jse"], 0, 0, 0, 0), "JSE")
+# ];
+# W = load("../Data/Calibration/W.jld")["W"]
+# SimulatedW = load("../Data/Calibration/SimulatedW.jld")["SimulatedW"]
+
+# AbsoluteMomentBarPlot(results, jse_moments, abm_moments, combinations, combinations_and_legends, W, SimulatedW)
+#---------------------------------------------------------------------------------------------------
+
+#----- ADV for the different cases -----# 
+
+function ADVCombinations(combinationsAndSettings::Vector)
+    traded_volumes = Vector{Int64}()
+    limit_volumes = Vector{Int64}()
+    num_limits = Vector{Int64}()
+    num_trades = Vector{Int64}()
+
+    for (i, combination_and_setting) in enumerate(combinationsAndSettings)
+        
+        # get the number of buyers and sellers
+        combination = combination_and_setting[1]
+        types = combination[1]
+        numType1Buyers = combination[2]
+        numType1Sellers = combination[3]
+        numType2Buyers = combination[4]
+        numType2Sellers = combination[5] 
+        
+        # set the settings
+        setting = combination_and_setting[2]
+        tau = setting[1]
+        es_start = setting[2]
+        es_stop = setting[3]
+        es_step = setting[4]
+        tol = setting[5]
+        color = setting[6]
+        label = setting[7]
+        buy_sell_mixed = setting[8]
+        
+        # read in the data and generate the log returns
+        l1lob_data = nothing
+        if types[1] == "jse"
+            date = DateTime("2019-07-08")
+            startTime = date + Hour(9) + Minute(1)
+            endTime = date + Hour(16) + Minute(50)
+            l1lob_data = CSV.File(string("../Data/JSE/L1LOB.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+            filter!(x -> startTime <= x.DateTime && x.DateTime < endTime, l1lob_data)
+        elseif types[1] == "abm"
+            l1lob_data = CSV.File(string("../Data/CoinTossX/L1LOBStar.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+        else
+            raw_data_dir = CreateCombinations(types, numType1Buyers, numType1Sellers, numType2Buyers, numType2Sellers)
+            l1lob_data = CSV.File(string(raw_data_dir * "/L1LOBRLIteration1000.csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+        end
+        push!(limit_volumes, sum(collect(skipmissing(l1lob_data[findall(x -> x == :Limit, l1lob_data.Type),:Volume]))))
+        push!(traded_volumes, sum(collect(skipmissing(l1lob_data[findall(x -> x == :Market, l1lob_data.Type),:Volume])))) 
+        push!(num_trades, length(collect(skipmissing(l1lob_data[findall(x -> x == :Market, l1lob_data.Type),:Volume]))))
+        push!(num_limits, length(collect(skipmissing(l1lob_data[findall(x -> x == :Limit, l1lob_data.Type),:Volume]))))
+        adv_res = DataFrame(OrderedDict(:Type => ["TradeVolume", "LimitVolume", "TradeCount", "LimitCount"], :Lower => [quantile(traded_volumes, 0.025), quantile(limit_volumes, 0.025), quantile(num_trades, 0.025), quantile(num_limits, 0.025)], :Mean => [round(mean(traded_volumes), digits = 3), round(mean(limit_volumes), digits = 3), mean(num_trades), mean(num_limits)], :Upper => [quantile(traded_volumes, 0.975), quantile(limit_volumes, 0.975), quantile(num_trades, 0.975), quantile(num_limits, 0.975)]))
+        
+        println()
+        println(label)
+        println(adv_res)
+    end
+end
+
+# mycolorscheme = [
+#     [get(colorschemes[:nipy_spectral], i) for i in reverse(range(0.76,0.97,3))];
+#     [get(colorschemes[:nipy_spectral], i) for i in reverse(range(0.3,0.5,4))];
+#     [get(colorschemes[:nipy_spectral], i) for i in reverse(range(0.04,0.2,4))]
+# ]
+# combinations_and_settings = [
+#     (([1], 1, 0, 0, 0), (6, -15, -6, 1, 0.1, mycolorscheme[2], "I+", "buy", 1)),
+#     (([1], 0, 1, 0, 0), (10, -16, -6, 1, 0.1, mycolorscheme[3], "I-", "sell", 1)),
+#     (([1], 1, 1, 0, 0), (6, -16, -6, 1, 0.1, mycolorscheme[5], "I+,I-", "mixed", 2)),
+#     (([2], 0, 0, 1, 0), (10, -16, -6, 1, 0.1, mycolorscheme[4], "II+", "buy", 1)),
+#     (([2], 0, 0, 1, 1), (10, -16, -6, 1, 0.1, mycolorscheme[6], "II+,II-", "mixed", 2)),
+#     (([1,2], 0, 1, 1, 0), (10, -16, -6, 1, 0.1, mycolorscheme[7], "II+,I-", "mixed", 2)),
+#     (([1], 0, 5, 0, 0), (10, -16, -6, 1, 0.1, mycolorscheme[8], "5I-", "sell", 5)),
+#     (([2], 0, 0, 5, 0), (10, -16, -6, 1, 0.1, mycolorscheme[9], "5II+", "buy", 5)),
+#     (([1], 5, 5, 0, 0), (10, -16, -6, 1, 0.1, mycolorscheme[10], "5I+,5I-", "mixed", 10)),
+#     (([2], 0, 0, 5, 5), (10, -16, -6, 1, 0.1, mycolorscheme[11], "5II+,5II-", "mixed", 10)),
+# #     ((["abm"], 0, 0, 0, 0), (10, -16, -6, 1, 0.1, :black, "ABM", "none", 0)),
+# ];
+# ADVCombinations(combinations_and_settings)
+#---------------------------------------------------------------------------------------------------
+
+#----- Policy plots for the different cases -----# 
+function GenerateActionsRL1(A::Int64, maxVolunmeIncrease::Float64)
+    println("-------------------------------- Generating Type 1 RL Actions  --------------------------------")
+    actions = OrderedDict{Int64, Float64}()
+    for (i, p) in enumerate(range(0, maxVolunmeIncrease, A))
+        actions[i] = p
+    end
+    return actions
+end
+
+function GenerateActionsRL2(deltas, MA2)
+    println("-------------------------------- Generating Type 2 RL Actions --------------------------------")
+    actions = OrderedDict{Int64, Tuple{Float64, Float64}}()
+    i = 1
+    for delta in deltas
+        for (p, d) in zip(range(0, 2, MA2), ones(MA2) .* delta)
+            actions[i] = (p, d)
+            i += 1
+        end
+    end
+    return actions
+end
+
+function GetPolicy(Q::Dict)
+    P = Dict{Vector{Int64}, Int64}()
+    for state in collect(keys(Q))
+        push!(P, state => argmax(Q[state]))
+    end
+    return P 
+end
+
+function PolicyVisualization(Q::Dict, numT::Int64, I::Int64, B::Int64, W::Int64, A::Int64, V::Int64, actionsMap, case::String, agent::String)
+
+    P = GetPolicy(Q)
+    plots = []
+    inc = 1     # :thermal, [0, 0.3, 0.70, 1] cgrad(:seismic, [0, 0.50, 0.78, 1])
+#     length(actionsMap[1]) == 2 ? color = cgrad(:jet, [0, 0.35, 0.65, 1]) : color = cgrad(:jet, [0, 0.35, 0.65, 1])
+    color = cgrad(:jet, [0, 0.35, 0.65, 1])
+    for i in I:-1:1 # i in I:-1:1 # want volume to increase upwards in plot
+        for t in numT:-1:1 # t in numT:-1:1 # want time remaining to decrease left to right
+            # create a matrix that will store values for spread and volume states
+            M = fill(0.0,B,W)
+            s_counter = 1
+            for s in 1:1:B # s in 1:1:B
+                v_counter = 1
+                for v in 1:1:W # v in 1:1:W
+                    # for each of these states get the action associted with it, if it does not exist then -1
+                    key = [t, i, s, v]
+                    M[s_counter,v_counter] = -1
+                    if key in collect(keys(P))
+                        M[s_counter,v_counter] = P[key]
+                    end
+                    v_counter += 1
+                end
+                s_counter += 1
+            end
+            # for a given t and i plot the actions taken over the spread and volume states
+            xlabel = ""
+            ylabel = ""
+            if t == numT && i == I # t == 5 && i == 5 specify the x and y labels for each individual heatmap
+                xlabel = "Volume"
+                ylabel = "Spread"
+            end
+            h = StatsPlots.heatmap(1:B, 1:W, M, xlabel = xlabel, ylabel = ylabel, c = color, clim = (-1, A), guidefontsize = 4, tick_direction = :out, legend = false, tickfontsize = 4, margin = -1mm)
+            push!(plots, h)
+        end
+    end
+    
+    y_ticks = Vector{String}()
+    push!(y_ticks, "-1")
+    for action in values(actionsMap)
+        if length(action) == 2
+            action[2] == -1 ? push!(y_ticks, "MO, " * string(Int(ceil(V * action[1])))) : push!(y_ticks, "LO, " * string(Int(ceil(V * action[1]))) * ", " * string(Int(action[2])))
+        else
+            push!(y_ticks, "MO, " * string(Int(ceil(V * action[1]))))
+        end
+    end
+    
+    centering = "                 "
+    title = plot(title = centering * agent * raw" $\in$ {" * case * raw"}", grid = false, showaxis = false, foreground_color_axis=:white, foreground_color_border=:white, ticks = :none, bottom_margin = -50Plots.px)
+    l = @layout[a{0.1h}; b{0.05w} grid(5,5); c{0.001h}] #[-1;getindex.(Ref(actionsMap), 1:A)].*ones(A+1,1)
+    colorbar = StatsPlots.heatmap(reshape([-1;1:A], (A+1,1)), title = "Actions", titlefontsize = 7, ylabel = "Inventory", ymirror = true, guidefontsize = 10, tickfontsize = 5, c = color, legend=:none, xticks=:none, yticks=(1:1:(A+1), y_ticks), y_foreground_color_axis=:white, y_foreground_color_border=:white)
+    empty = plot(title = centering * "Time", titlefontsize = 10, legend=false,grid=false, foreground_color_axis=:white, foreground_color_border=:white, ticks = :none)
+    p = plot(title, colorbar, plots..., empty, layout = l, 
+        fontfamily = "Computer Modern")
+
+    # Plots.savefig(p, path_to_files * "/Images/MARL/PolicyPlot_case_" * join(split(case, ","), "_") * "_agent_" * agent * ".pdf")
+        
+end
+
+# A1 = 9
+# maxVolunmeIncrease = 2.0
+# actionsRL1 = GenerateActionsRL1(A1, maxVolunmeIncrease)
+
+# deltas = [-1, 0, 3, 6]      # placement depth for limit orders, -1 is for market orders
+# MA2 = 5
+# actionsRL2 = GenerateActionsRL2(deltas, MA2);
+
+# numT = I = B = W = 5;
+# V = 100;
+
+# t1_b1_s1 = load("../Data/RL/Training/MARL/Results_Type1_Buy_1_Sell_1_alpha0.1_lambda0.003_gamma0.25.jld")["rl_results"];
+# t2_b1_s0 = load("../Data/RL/Training/MARL/Results_Type2_Buy_1_Sell_0_alpha0.1_lambda0.003_gamma0.25_delta_3_6.jld")["rl_results"];
+
+# V_per_agent = Int(V / length(t1_b1_s1[1000]))
+# case = "I+,I-"
+# agent = "I+"
+# PolicyVisualization(t1_b1_s1[1000]["rlAgent_1"]["Q"], numT, I, B, W, A1, V_per_agent, actionsRL1, case, agent)
+
+# V_per_agent = Int(V / length(t1_b1_s1[1000]))
+# case = "I+,I-"
+# agent = "I-"
+# PolicyVisualization(t1_b1_s1[1000]["rlAgent_2"]["Q"], numT, I, B, W, A1, V_per_agent, actionsRL1, case, agent)
+
+# V_per_agent = Int(V / length(t2_b1_s0[1000]))
+# case = "II+"
+# agent = "II+"
+# PolicyVisualization(t2_b1_s0[1000]["rlAgent_1"]["Q"], numT, I, B, W, length(actionsRL2), V_per_agent, actionsRL2, case, agent)
+
 #---------------------------------------------------------------------------------------------------
