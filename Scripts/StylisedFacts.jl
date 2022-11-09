@@ -93,9 +93,10 @@ function AbsLogReturnAutocorrelation(exchange::String, suffix::String, filepath:
     color = exchange == "CoinTossX" ? :green : (exchange == "JSE" ? :purple : :orange)
     lag = length(logreturns) - 1
     absAutoCorr = autocor(abs.(logreturns), 1:lag; demean = false)
-    autoCorrPlot = plot(absAutoCorr, seriestype = :scatter, marker = (color, stroke(color), 3), legend = false, xlabel = "Lag", ylabel = "Autocorrelation", title = raw"$\mathrm{X_{0} =} {" * string(430 * V) * raw"} \;\; \mathrm{(n_{T},n_{I},n_{S},n_{V} =} {" * string(numT) * raw"}$)", ylim = (-0.1, 0.7), fontfamily="Computer Modern")
+    autoCorrPlot = plot(absAutoCorr, seriestype = :scatter, marker = (color, stroke(color), 3), legend = false, xlabel = "Lag", ylabel = "Autocorrelation", title = "", ylim = (-0.1, 0.7), formatter = :plain, fontfamily="Computer Modern")
+    plot!(autoCorrPlot, absAutoCorr, xscale = :log10, inset = (1, bbox(0.52, 0.08, 0.5, 0.5)), legend = false, subplot = 2, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.6), fontfamily="Computer Modern")
     plot!(autoCorrPlot, [1.96 / sqrt(length(logreturns)), -1.96 / sqrt(length(logreturns))], seriestype = :hline, line = (:dash, :black, 2))
-    savefig(autoCorrPlot, string("../Images/" * exchange * "/" * filepath * "/AbsLog-ReturnAutocorrelation" * suffix * "_V" * string(V) * "_S" * string(numT) * "_430.", format))
+    savefig(autoCorrPlot, string("../Images/" * exchange * "/" * filepath * "/AbsLog-ReturnAutocorrelation" * suffix * "_inset.", format))
 end
 #---------------------------------------------------------------------------------------------------
 
@@ -260,15 +261,17 @@ function RLAbsLogReturnAutocorrelation(stateSpaceSizes::Vector{Int64}, initialIn
             lag = length(logreturns) - 1
             absAutoCorr = autocor(abs.(logreturns), 1:lag; demean = false)
             if count == 1
-                autoCorrPlot = plot(absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(s) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * v) * raw"}$", title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), fontfamily="Computer Modern")
+                autoCorrPlot = plot(absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(s) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * v) * raw"}$", title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), formatter = :plain, grid = true, fontfamily="Computer Modern")
+                plot!(autoCorrPlot, absAutoCorr, xscale = :log10, inset = (1, bbox(0.52, 0.08, 0.5, 0.5)), legend = false, subplot = 2, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale order-flow autocorrelation", titlefontsize = 7, ylim = (-0.1, 0.6), grid = true, fontfamily="Computer Modern")
             else
-                plot!(autoCorrPlot, absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(s) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * v) * raw"}$", title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), fontfamily="Computer Modern")
+                plot!(autoCorrPlot, absAutoCorr, seriestype = :scatter, linecolor = :black, marker = (color, stroke(color), 3), legend = :topleft, label = raw"$\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(s) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * v) * raw"}$", title = "", xlabel = "Lag", ylabel = "Autocorrelation", fg_legend = :transparent, ylim = (-0.1, 0.8), formatter = :plain, grid = true, fontfamily="Computer Modern")
+                plot!(autoCorrPlot[2], absAutoCorr, xscale = :log10, legend = false, xlabel = "Lag", guidefontsize = 7, tickfontsize = 5, xrotation = 30, yrotation = 30, ylabel = "Autocorrelation", linecolor = color, title = "Log-scale autocorrelation", titlefontsize = 7, formatter = :plain, ylim = (-0.1, 0.6))
             end
             count += 1
         end
     end
     plot!(autoCorrPlot, [quantile(Normal(), (1 + 0.95) / 2) / sqrt(length(logreturns)), quantile(Normal(), (1 - 0.95) / 2) / sqrt(length(logreturns))], seriestype = :hline, line = (:dash, :black, 2), label = "")
-    savefig(autoCorrPlot, string("../Images/CoinTossX/RLAbsLog-ReturnAutocorrelation_430.", format))
+    savefig(autoCorrPlot, string("../Images/CoinTossX/RLAbsLog-ReturnAutocorrelation_inset_430.", format))
     println("RL agents trade-sign autocorrelation complete")
 end
 # stateSpaceSizes = [5,10]
@@ -440,6 +443,143 @@ end
 # ADVJSE()
 #---------------------------------------------------------------------------------------------------
 
+#----- Inverse cubic law -----# 
+function icdf(x, g, side)
+    if side == "left"
+        x = reverse(abs.(x))
+        return length(x[findfirst(y -> y > g, x):end]) / length(x), length(x[findfirst(y -> y > g, x):end])
+    else
+        return length(x[findfirst(y -> y > g, x):end]) / length(x), length(x[findfirst(y -> y > g, x):end])
+    end
+        
+end
+
+function PlotExceedenceDistribution(exchange::String, l1lobpath::String, gs::Vector{Float64}, threshold::Int64, startTime::DateTime, endTime::DateTime, S::Int64, V::Int64, lrange::Vector{Float64}, rrange::Vector{Float64}; format::String = "pdf")
+    if exchange == "CoinTossX"
+        data = CSV.File(string("../Data/" * exchange * "/" * l1lobpath * ".csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Initialization => Symbol, :Type => Symbol)) |> x -> filter(y -> y.Initialization != :INITIAL, x) |> DataFrame
+    else
+        data = CSV.File(string("../Data/" * exchange * "/" * l1lobpath * ".csv"), drop = [:MidPrice, :Spread, :Price], missingstring = "missing", types = Dict(:DateTime => DateTime, :Type => Symbol)) |> DataFrame
+        filter!(x -> startTime <= x.DateTime && x.DateTime < endTime, data)
+    end
+    data.Date = Date.(data.DateTime)
+    uniqueDays = unique(data.Date)
+    logreturns = map(day -> diff(log.(skipmissing(data[searchsorted(data.Date, day), :MicroPrice]))), uniqueDays) |> x -> reduce(vcat, x) 
+    m = mean(logreturns)
+    v = std(logreturns)
+    norm_logreturns = (logreturns .- m) ./ v
+    sorted_norm_logreturns = sort(norm_logreturns)
+    left_tail = sorted_norm_logreturns[1:findlast(y -> y <= 0, sorted_norm_logreturns)]
+    right_tail = sorted_norm_logreturns[(findlast(y -> y <= 0, sorted_norm_logreturns)+1):end]
+    pgs_left = Vector{Float64}()
+    counts_left = Vector{Float64}()
+    pgs_right = Vector{Float64}()
+    counts_right = Vector{Float64}()
+    gs_used = Vector{Float64}()
+    
+    for g in gs
+        pg_left, count_left = icdf(left_tail, g, "left")
+        pg_right, count_right = icdf(right_tail, g, "right")
+        push!(pgs_left, pg_left)
+        push!(counts_left, count_left)
+        push!(pgs_right, pg_right)
+        push!(counts_right, count_right)
+        push!(gs_used, g)
+        if count_right < threshold || count_left < threshold
+            break
+        end
+    end 
+    
+    p = plot(log.(gs_used), log.(pgs_left), seriestype = :scatter, color = 1, markerstrokecolor = 1, 
+        marker = :dtriangle, markersize = 5, legend = :bottomleft, titlefontsize = 11,
+        title = raw"RL ($\mathrm{n_{T},n_{I},n_{S},n_{V} =} {" * string(S) * raw"} \;\; \mathrm{X_{0} =} {" * string(430 * V) * raw"}$)", 
+        xlabel = "g", ylabel = "P(g)", label = "left-tail", 
+        alpha = 0.7, fg_legend = :transparent, size = (500,400), fontfamily = "Computer Modern")
+    plot!(p, log.(gs_used), log.(pgs_right), seriestype = :scatter, color = 2, markerstrokecolor = 2, 
+        marker = :utriangle, markersize = 5, label = "right-tail", alpha = 0.7)
+    
+    # fit the left tail 
+    si = findfirst(u -> u > lrange[1], log.(gs_used))
+    ei = findlast(u -> u <= lrange[2], log.(gs_used))
+    isnothing(si) ? si = length(log.(gs_used)) : si = si
+    isnothing(ei) ? ei = 1 : ei = ei
+    
+    x = log.(gs_used)[si:ei]
+    y = log.(pgs_left)[si:ei]
+    b = cov(x, y) / var(x)
+    a = mean(y) - b * mean(x)
+    lin_fit = a .+ b .* x
+     
+    # compute the variance of the slope
+    N = length(x)
+    sigma_sq = (1/(N-2)) * sum(((lin_fit) .- y).^2)
+    xbar = mean(x)
+    se_beta = sqrt(sigma_sq / sum((x .- xbar).^2))
+    
+    println("Left tail: ")
+    println("Intercept: ", a)
+    println("Slope :", b)
+    println("Slope stderr: ", se_beta)
+    c = round(-b, digits = 2)
+    plot!(p, x, lin_fit, linewidth = 3, color = :red4, 
+        label = "left-tail linear fit " * L"(\alpha = %$c )")
+    
+    println()
+    
+    # fit the right tail
+    si = findfirst(u -> u > rrange[1], log.(gs_used))
+    ei = findlast(u -> u <= rrange[2], log.(gs_used))
+    isnothing(si) ? si = length(log.(gs_used)) : si = si
+    isnothing(ei) ? ei = 1 : ei = ei
+    
+    x = log.(gs_used)[si:ei]
+    y = log.(pgs_right)[si:ei]
+    b = cov(x, y) / var(x)
+    a = mean(y) - b * mean(x)
+    lin_fit = a .+ b .* x
+    
+    # compute the variance of the slope
+    N = length(x)
+    sigma_sq = (1/(N-2)) * sum(((lin_fit) .- y).^2)
+    xbar = mean(x)
+    se_beta = sqrt(sigma_sq / sum((x .- xbar).^2))
+     
+    println("Right tail: ")
+    println("Intercept: ", a)
+    println("Slope :", b)
+    println("Slope stderr: ", se_beta)
+    c = round(-b, digits = 2)
+    plot!(p, x, lin_fit, linewidth = 3, color = :green4, 
+        label = "right-tail linear fit " * L"(\alpha = %$c )")
+    
+    display(p)
+    if length(split(l1lobpath, "/")) > 1
+        path = split(l1lobpath, "/")[1]
+        Plots.savefig(p, path_to_files * "Images/" * exchange * "/" * path * "/CDF_Inverse_Cube.pdf")
+    else
+#         Plots.savefig(p, path_to_files * "Images/" * exchange * "/CDF_Inverse_Cube.pdf")
+    end
+end
+
+
+# date = DateTime("2019-07-08")
+# startTime = date + Hour(9) + Minute(1)
+# endTime = date + Hour(16) + Minute(50) 
+
+# S = 5
+# V = 200
+
+# exchange = "CoinTossX"
+# l1lobpath = "alpha0.1_iterations1000_V" * string(V) * "_S" * string(S) * "_430/L1LOBRLIteration1000" # alpha0.1_iterations1000_V100_S5_430/L1LOBRLIteration1000, L1LOBStar
+# gs = collect(1:0.1:10) # jse = 10, ABM = 15, RL_V100_S5 = 10
+# threshold = 2
+# lrange = [1.9,3] # jse = 1.2, ABM = 1.2, RL_V100_S5 = 1.6
+# rrnage = [1.9,3];
+
+# PlotExceedenceDistribution(exchange, l1lobpath, gs, threshold, startTime, endTime, S, V, lrange, rrnage)
+
+
+#---------------------------------------------------------------------------------------------------
+
 # # make sure these are the same as the ones used in the sensitivity analysis
 # date = DateTime("2019-07-08")
 # startTime = date + Hour(9) + Minute(1)
@@ -450,3 +590,6 @@ end
 # StylizedFacts("CoinTossX", "L1LOB", startTime, endTime) # "/alpha0.1_iterations1000_V200_S10_430/L1LOBRLIteration1000" numT = , V = 
 # PriceImpact("CoinTossX", "L1LOB", startTime, endTime)
 # DepthProfile("CoinTossX", "DepthProfileData") # "/alpha0.1_iterations1000_V50_S5_430/DepthProfileDataRLIteration1000"
+
+
+
